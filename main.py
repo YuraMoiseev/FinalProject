@@ -63,6 +63,10 @@ def CompareSequences(file1, file2, melody_length=7):
     return res
 
 
+def smth():
+    pass
+
+
 def ClosestMelodies(arr1: list, arr2: list, sublength: int):
     if sublength > min(len(arr1), len(arr2)):
         raise Exception("Invalid sublist length")
