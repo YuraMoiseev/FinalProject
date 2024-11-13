@@ -69,7 +69,7 @@ def smth():
 
 def ClosestMelodies(arr1: list, arr2: list, sublength: int):
     if sublength > min(len(arr1), len(arr2)):
-        raise Exception("Invalid sublist length")
+        raise Exception(f"Invalid sublist length - {len(arr1)} {len(arr2)} < {sublength}")
     res = (-1, -1), -1
     for i in range(len(arr1)-sublength+1):
         for j in range(len(arr2)-sublength+1):
@@ -88,7 +88,7 @@ def ClosestTiming():
     pass
 
 
-print(CompareSequences("Temp1.mid", "Temp2.mid", 13))
+print(CompareSequences("Temp1.mid", "Temp2.mid", 11))
 
 # Min heap of melodies by difference
 
