@@ -80,7 +80,7 @@ def ClosestMelodies(arr1: list, arr2: list, sublength: int):
 
 def Helps(arr1: list, arr2: list):
     if len(arr1) != len(arr2):
-        raise Exception("Invalid list length")
+        raise Exception(f"Invalid list length - {len(arr1)} {len(arr2)}")
     return sum([abs(arr1[i] - arr2[i]) for i in range(len(arr1))])
 
 
@@ -88,7 +88,7 @@ def ClosestTiming():
     pass
 
 
-print(CompareSequences("Temp1.mid", "Temp2.mid", 6))
+print(CompareSequences("Temp1.mid", "Temp2.mid", 13))
 
 # Min heap of melodies by difference
 
