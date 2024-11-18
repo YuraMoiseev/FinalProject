@@ -1,5 +1,9 @@
 from mido import *
 import editdistance
+
+# currently just experimenting with comparing .mid files
+
+
 # note off/on - type
 
 # 96 - one quarter
@@ -45,15 +49,33 @@ def NoteSequences(file):
     res = []
     for i in f.tracks:
         res1 = []
-        for j in i:
-            if hasattr(j, "note") and j.type == "note_on":
-                res1.append(j.note)
-        res1 = res1[:-4]
+        sub_res1 = []
+        for j in range(1, len(i)):
+            if hasattr(i[j-1], "note") and i[j-1].type == "note_on":
+                if i[j].type == "note_on":
+                    sub_res1.append(i[j-1].note)
+                res1.append(i[j-1].note)
         res.append(res1)
     return res
 
 
-def CompareSequences(file1, file2, melody_length=7):
+def TimingSequences(file):
+    f = MidiFile(file, clip=True)
+    res = []
+    for i in f.tracks:
+        res1 = []
+        time = 0
+        for j in i:
+            if hasattr(j, "time"):
+                time += j.time
+                if j.type == "note_on":
+                    res1.append(j.time)
+                    time = 0
+        res.append(res1)
+    return res
+
+
+def CompareNoteSequences(file1, file2, melody_length=7):
     arr1, arr2 = NoteSequences(file1), NoteSequences(file2)
     res = (-1, -1), (-1, -1), -1
     for i in range(len(arr1)):
@@ -64,28 +86,25 @@ def CompareSequences(file1, file2, melody_length=7):
     return res
 
 
-def smth():
-    pass
-
-
 def ClosestMelodies(arr1: list, arr2: list, sublength: int):
     if sublength > min(len(arr1), len(arr2)):
         raise Exception(f"Invalid sublist length - {len(arr1)} {len(arr2)} < {sublength}")
     res = (-1, -1), -1
     for i in range(len(arr1)-sublength+1):
         for j in range(len(arr2)-sublength+1):
-            if Helps(arr1[i:i+sublength], arr2[j:j+sublength]) < res[1] or res[1] == -1:
-                res = (i, j), Helps(arr1[i:i+sublength], arr2[j:j+sublength])
+            if ListDifference(arr1[i:i + sublength], arr2[j:j + sublength]) < res[1] or res[1] == -1:
+                res = (i, j), ListDifference(arr1[i:i + sublength], arr2[j:j + sublength])
     return res
 
 
-def Helps(arr1: list, arr2: list):
+def ListDifference(arr1: list, arr2: list):
     if len(arr1) != len(arr2):
         raise Exception(f"Invalid list length - {len(arr1)} {len(arr2)}")
     return sum([abs(arr1[i] - arr2[i]) for i in range(len(arr1))])
 
 
-def ClosestTiming():
+def ClosestTiming(file1, file2):
+
     pass
 
 
@@ -128,11 +147,11 @@ def compare_midi_files2(file1, file2):
                 notes2.append([pitch])
 
     # Calculate similarity for each group of pitches
-    similarity_scores = []
     return manhattan_distance(notes1, notes2)
 
 
-print(compare_midi_files2("Temp3.mid", "Temp2.mid"))
+print(CompareNoteSequences("Temp1.mid", "Temp2.mid", 16))
+print(compare_midi_files2("Temp1.mid", "Temp2.mid"))
 
 # Min heap of melodies by difference
 
@@ -152,7 +171,7 @@ print(compare_midi_files2("Temp3.mid", "Temp2.mid"))
 #
 # print(Temps[1].tracks[0])
 
-#p rint(CompareSequences("Temp2.mid", "Temp1.mid"))
+# print(CompareSequences("Temp2.mid", "Temp1.mid"))
 
 
 # for i in range(1, len(Temps[1].tracks[0])):
