@@ -132,7 +132,7 @@ def compare_midi_files2(file1, file2):
     return manhattan_distance(notes1, notes2)
 
 
-print(CompareSequences("Temp1.mid", "Temp2.mid", 11))
+print(compare_midi_files2("Temp3.mid", "Temp2.mid"))
 
 # Min heap of melodies by difference
 
