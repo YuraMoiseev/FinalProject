@@ -49,12 +49,25 @@ def NoteSequences(file):
     res = []
     for i in f.tracks:
         res1 = []
+        for j in i:
+            if hasattr(j, "note") and j.type == "note_on":
+                res1.append(j.note)
+        res.append(res1)
+    return res
+
+
+def NoteSequences1(file):
+    f = MidiFile(file, clip=True)
+    res = []
+    for i in f.tracks:
+        res1 = []
         sub_res1 = []
         for j in range(1, len(i)):
             if hasattr(i[j-1], "note") and i[j-1].type == "note_on":
-                if i[j].type == "note_on":
-                    sub_res1.append(i[j-1].note)
-                res1.append(i[j-1].note)
+                sub_res1.append(i[j-1].note)
+                if i[j].type == "note_off" or i[j].time != 0:
+                    res1.append(sub_res1)
+                    sub_res1 = []
         res.append(res1)
     return res
 
@@ -88,7 +101,7 @@ def CompareNoteSequences(file1, file2, melody_length=7):
 
 def ClosestMelodies(arr1: list, arr2: list, sublength: int):
     if sublength > min(len(arr1), len(arr2)):
-        raise Exception(f"Invalid sublist length - {len(arr1)} {len(arr2)} < {sublength}")
+        raise Exception(f"Invalid sublist length - {len(arr1)}; {len(arr2)} < {sublength}")
     res = (-1, -1), -1
     for i in range(len(arr1)-sublength+1):
         for j in range(len(arr2)-sublength+1):
@@ -98,13 +111,18 @@ def ClosestMelodies(arr1: list, arr2: list, sublength: int):
 
 
 def ListDifference(arr1: list, arr2: list):
+    def diff(sublist1, sublist2):
+        s1, s2 = sublist1.sorted(), sublist2.sorted()
+        length = min(len(s1), len(s2))
+        diffs = sum([abs(s1[i]-s2[i])] for i in range(length))
+        return diffs
+
     if len(arr1) != len(arr2):
         raise Exception(f"Invalid list length - {len(arr1)} {len(arr2)}")
-    return sum([abs(arr1[i] - arr2[i]) for i in range(len(arr1))])
+    return sum([diff(arr1[i], arr2[i]) for i in range(len(arr1))])
 
 
 def ClosestTiming(file1, file2):
-
     pass
 
 
@@ -148,10 +166,6 @@ def compare_midi_files2(file1, file2):
 
     # Calculate similarity for each group of pitches
     return manhattan_distance(notes1, notes2)
-
-
-print(CompareNoteSequences("Temp1.mid", "Temp2.mid", 16))
-print(compare_midi_files2("Temp1.mid", "Temp2.mid"))
 
 # Min heap of melodies by difference
 
