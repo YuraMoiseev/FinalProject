@@ -16,6 +16,9 @@ import editdistance
 #     print(Temp4.tracks[0][i])
 #
 # print()
+TIMING_CONST = 24
+TIMING_WEIGHT = 0.5
+MELODY_WEIGHT = 1 - TIMING_WEIGHT
 
 
 def PresentNotes(file):
@@ -26,22 +29,6 @@ def PresentNotes(file):
             if hasattr(j, "note") and j.note not in res:
                 res.append(j.note)
     return res
-
-
-def NoteLength(file, note):
-    f = MidiFile(file, clip=True)
-    for i in f.tracks:
-        start = False
-        count = 0
-        for j in i:
-            if start and hasattr(j, "note"):
-                count += j.time
-            if hasattr(j, "note") and j.note == note and j.type == "note_on":
-                start = True
-            if hasattr(j, "note") and j.note == note and j.type == "note_off":
-                return count
-
-    pass
 
 
 def NoteSequences(file):
@@ -82,14 +69,24 @@ def TimingSequences(file):
             if hasattr(j, "time"):
                 time += j.time
                 if j.type == "note_on":
-                    res1.append(j.time)
+                    res1.append(j.time / TIMING_CONST )
                     time = 0
         res.append(res1)
     return res
 
 
-def CompareNoteSequences(file1, file2, melody_length=7):
-    arr1, arr2 = NoteSequences(file1), NoteSequences(file2)
+def PairedSequenses(file):
+    a = []
+    b = NoteSequences(file), TimingSequences(file)
+    for i in range(len(b[1])):
+        a.append(list(zip(b[0][i], b[1][i])))
+    return a
+
+
+# takes all the tracks from 2 midi files and finds the most similar melody, gives the indexes of melodies and the staring point at which the most suitability was found
+# MAIN FUNC FOR NOW!!!
+def CompareMelodies(file1, file2, melody_length=-1):
+    arr1, arr2 = PairedSequenses(file1), PairedSequenses(file2)
     res = (-1, -1), (-1, -1), -1
     for i in range(len(arr1)):
         for j in range(len(arr2)):
@@ -99,42 +96,48 @@ def CompareNoteSequences(file1, file2, melody_length=7):
     return res
 
 
-def ClosestSequences(arr1: list, arr2: list, sublength: int):
+
+# receives instances of series of notes and relative times and finds the most fitting parts
+def ClosestSequences(arr1, arr2: list, sublength: int):
+    if sublength == -1:
+        sublength = min(len(arr1), len(arr2))
     if sublength > min(len(arr1), len(arr2)):
         raise Exception(f"Invalid sublist length - {len(arr1)}; {len(arr2)} < {sublength}")
     res = (-1, -1), -1
-    for i in range(len(arr1)-sublength+1):
-        for j in range(len(arr2)-sublength+1):
-            if ListDifference(arr1[i:i + sublength], arr2[j:j + sublength]) < res[1] or res[1] == -1:
-                res = (i, j), ListDifference(arr1[i:i + sublength], arr2[j:j + sublength])
+    for i in range(len(arr1) - sublength + 1):
+        for j in range(len(arr1) - sublength + 1):
+            help = (arr1[i:i + sublength][0], arr2[j:j + sublength][0]), (arr1[i:i + sublength][1], arr2[j:j + sublength])[1]
+            similarity = ListDifference(help[0][0], help[0][1]) * MELODY_WEIGHT + ListDifference(help[1][0], help[1][1]) * TIMING_WEIGHT
+            if similarity < res[1] or res[1] == -1:
+                res = (i, j), similarity
     return res
 
 
 # find the difference between the closest number in the list
-def diff(arr1: list, arr2: list):
-    if (type(arr1) != list):
-        arr1 = [arr1]
-    if (type(arr2) != list):
-        arr2 = [arr2]
-    if len(arr1) < len(arr2):
-        arr1, arr2 = arr2, arr1
-    arr1.sort()
-    arr2.sort()
-    id1, id2 = 0,0
-    sum = 0
-    while id1 < len(arr1) and id2 < len(arr2):
-        if arr1[id1] == arr2[id2]:
-            id1, id2 = id1+1, id2+1
-        elif arr1[id1] > arr2[id2] and arr1[id1] < arr2[id2+1]:
-            sum+= min(abs(arr1[id1]-arr2[id2]), abs(arr1[id1]-arr2[id2+1]))
-            id1 += 1
-        elif arr1[id1] < arr2[id2]:
-            id1+=1
-        elif arr1[id1] > arr2[id2]:
-            id2+=1
-    return sum
-
-
+# def diff(arr1: list, arr2: list):
+#     if (type(arr1) != list):
+#         arr1 = [arr1]
+#     if (type(arr2) != list):
+#         arr2 = [arr2]
+#     if len(arr1) < len(arr2):
+#         arr1, arr2 = arr2, arr1
+#     arr1.sort()
+#     arr2.sort()
+#     id1, id2 = 0,0
+#     sum = 0
+#     while id1 < len(arr1) and id2 < len(arr2):
+#         if arr1[id1] == arr2[id2]:
+#             id1, id2 = id1+1, id2+1
+#         elif arr1[id1] > arr2[id2] and arr1[id1] < arr2[id2+1]:
+#             sum+= min(abs(arr1[id1]-arr2[id2]), abs(arr1[id1]-arr2[id2+1]))
+#             id1 += 1
+#         elif arr1[id1] < arr2[id2]:
+#             id1+=1
+#         elif arr1[id1] > arr2[id2]:
+#             id2+=1
+#     return sum
+def diff(a1, a2):
+    return abs(a1 - a2)
 
 
 def ListDifference(arr1: list, arr2: list):
@@ -143,57 +146,9 @@ def ListDifference(arr1: list, arr2: list):
     return sum([diff(arr1[i], arr2[i]) for i in range(len(arr1))])
 
 
-def ClosestTiming(file1, file2):
-    f1, f2 = MidiFile(file1, clip=True), MidiFile(file2, clip=True)
-    pass
+print(CompareMelodies("Temp1.mid", "Temp9.mid", 16))
 
-
-def manhattan_distance(list1, list2):
-    distance = 0
-    for sub1, sub2 in zip(list1, list2):
-        sub_distance = 0
-        for x, y in zip(sub1, sub2):
-            sub_distance += abs(x - y)
-        distance += sub_distance
-    return distance
-
-
-def compare_midi_files2(file1, file2):
-    # Load midi files
-    mid1 = MidiFile(file1)
-    mid2 = MidiFile(file2)
-
-    # Extract notes from midi files and group adjacent pitches together
-    notes1 = []
-    for msg in merge_tracks(mid1.tracks):
-        if 'note_on' in msg.type:
-            pitch = msg.note
-            if notes1 and pitch == notes1[-1][-1] + 1:
-                # Append pitch to last group
-                notes1[-1].append(pitch)
-            else:
-                # Create new group for pitch
-                notes1.append([pitch])
-
-    notes2 = []
-    for msg in merge_tracks(mid2.tracks):
-        if 'note_on' in msg.type:
-            pitch = msg.note
-            if notes2 and pitch == notes2[-1][-1] + 1:
-                # Append pitch to last group
-                notes2[-1].append(pitch)
-            else:
-                # Create new group for pitch
-                notes2.append([pitch])
-
-    # Calculate similarity for each group of pitches
-    return manhattan_distance(notes1, notes2)
-
-
-a1, a2 = [5,4,2,8,1], [8,5,3,10]
-print(diff(a1, a2))
 # Min heap of melodies by difference
-
 
 # notes = PresentNotes("Temp2.mid")
 # print(notes)
