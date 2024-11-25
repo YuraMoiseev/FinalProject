@@ -101,8 +101,8 @@ def ClosestSequences(Melody_1_Notes: list, Melody_1_Timings: list, Melody_2_Note
     res = (-1, -1), -1
     for i in range(len(Melody_1_Notes) - sublength + 1):
         for j in range(len(Melody_2_Notes) - sublength + 1):
-            helps = (Melody_1_Notes[i:i + sublength], Melody_2_Notes[j:j + sublength]), (Melody_1_Timings[i:i + sublength], Melody_2_Timings[j:j + sublength])
-            similarity = ListDifference(helps[0][0], helps[0][1]) * MELODY_WEIGHT + ListDifference(helps[1][0], helps[1][1]) * TIMING_WEIGHT
+            melody_comparator = (Melody_1_Notes[i:i + sublength], Melody_2_Notes[j:j + sublength]), (Melody_1_Timings[i:i + sublength], Melody_2_Timings[j:j + sublength])
+            similarity = ListDifference(melody_comparator[0][0], melody_comparator[0][1]) * MELODY_WEIGHT + ListDifference(melody_comparator[1][0], melody_comparator[1][1]) * TIMING_WEIGHT
             if similarity < res[1] or res[1] == -1:
                 res = (i, j), similarity
     return res
