@@ -1,5 +1,6 @@
 from mido import *
 import editdistance
+from sortedcontainers import SortedList
 
 # currently just experimenting with comparing .mid files
 
@@ -17,7 +18,7 @@ import editdistance
 #
 # print()
 TIMING_CONST = 24
-TIMING_WEIGHT = 0.5
+TIMING_WEIGHT = 0.1
 MELODY_WEIGHT = 1 - TIMING_WEIGHT
 
 
@@ -75,22 +76,16 @@ def TimingSequences(file):
     return res
 
 
-def PairedSequenses(file):
-    a = []
-    b = NoteSequences(file), TimingSequences(file)
-    for i in range(len(b[1])):
-        a.append(list(zip(b[0][i], b[1][i])))
-    return a
-
-
 # takes all the tracks from 2 midi files and finds the most similar melody, gives the indexes of melodies and the staring point at which the most suitability was found
 # MAIN FUNC FOR NOW!!!
 def CompareMelodies(file1, file2, melody_length=-1):
-    arr1, arr2 = PairedSequenses(file1), PairedSequenses(file2)
+    Melodies_1, Melodies_2 = (NoteSequences(file1), TimingSequences(file1)), (NoteSequences(file2), TimingSequences(file2))
+    # set our basic case, if the function returns this value, midi file did not contain any melodies
     res = (-1, -1), (-1, -1), -1
-    for i in range(len(arr1)):
-        for j in range(len(arr2)):
-            r1 = ClosestSequences(arr1[i], arr2[i], melody_length)
+    for i in range(len(Melodies_1[0])):
+        for j in range(len(Melodies_2[1])):
+            # for each track we go through, we find the most similar spot
+            r1 = ClosestSequences(Melodies_1[0][i], Melodies_1[1][i], Melodies_2[0][j], Melodies_2[1][j], melody_length)
             if r1[1] > res[2] or res[2] == -1:
                 res = (i, j), r1[0], r1[1]
     return res
@@ -98,52 +93,25 @@ def CompareMelodies(file1, file2, melody_length=-1):
 
 
 # receives instances of series of notes and relative times and finds the most fitting parts
-def ClosestSequences(arr1, arr2: list, sublength: int):
+def ClosestSequences(Melody_1_Notes: list, Melody_1_Timings: list, Melody_2_Notes: list, Melody_2_Timings: list, sublength: int):
     if sublength == -1:
-        sublength = min(len(arr1), len(arr2))
-    if sublength > min(len(arr1), len(arr2)):
-        raise Exception(f"Invalid sublist length - {len(arr1)}; {len(arr2)} < {sublength}")
+        sublength = min(len(Melody_1_Notes), len(Melody_2_Notes))
+    if sublength > min(len(Melody_1_Notes), len(Melody_2_Notes)):
+        raise Exception(f"Invalid sublist length - {len(Melody_1_Notes)}; {len(Melody_2_Notes)} < {sublength}")
     res = (-1, -1), -1
-    for i in range(len(arr1) - sublength + 1):
-        for j in range(len(arr1) - sublength + 1):
-            help = (arr1[i:i + sublength][0], arr2[j:j + sublength][0]), (arr1[i:i + sublength][1], arr2[j:j + sublength])[1]
-            similarity = ListDifference(help[0][0], help[0][1]) * MELODY_WEIGHT + ListDifference(help[1][0], help[1][1]) * TIMING_WEIGHT
+    for i in range(len(Melody_1_Notes) - sublength + 1):
+        for j in range(len(Melody_2_Notes) - sublength + 1):
+            helps = (Melody_1_Notes[i:i + sublength], Melody_2_Notes[j:j + sublength]), (Melody_1_Timings[i:i + sublength], Melody_2_Timings[j:j + sublength])
+            similarity = ListDifference(helps[0][0], helps[0][1]) * MELODY_WEIGHT + ListDifference(helps[1][0], helps[1][1]) * TIMING_WEIGHT
             if similarity < res[1] or res[1] == -1:
                 res = (i, j), similarity
     return res
 
 
-# find the difference between the closest number in the list
-# def diff(arr1: list, arr2: list):
-#     if (type(arr1) != list):
-#         arr1 = [arr1]
-#     if (type(arr2) != list):
-#         arr2 = [arr2]
-#     if len(arr1) < len(arr2):
-#         arr1, arr2 = arr2, arr1
-#     arr1.sort()
-#     arr2.sort()
-#     id1, id2 = 0,0
-#     sum = 0
-#     while id1 < len(arr1) and id2 < len(arr2):
-#         if arr1[id1] == arr2[id2]:
-#             id1, id2 = id1+1, id2+1
-#         elif arr1[id1] > arr2[id2] and arr1[id1] < arr2[id2+1]:
-#             sum+= min(abs(arr1[id1]-arr2[id2]), abs(arr1[id1]-arr2[id2+1]))
-#             id1 += 1
-#         elif arr1[id1] < arr2[id2]:
-#             id1+=1
-#         elif arr1[id1] > arr2[id2]:
-#             id2+=1
-#     return sum
-def diff(a1, a2):
-    return abs(a1 - a2)
-
-
 def ListDifference(arr1: list, arr2: list):
     if len(arr1) != len(arr2):
         raise Exception(f"Invalid list length - {len(arr1)} {len(arr2)}")
-    return sum([diff(arr1[i], arr2[i]) for i in range(len(arr1))])
+    return sum([abs(arr1[i] - arr2[i]) for i in range(len(arr1))])
 
 
 print(CompareMelodies("Temp1.mid", "Temp9.mid", 16))
