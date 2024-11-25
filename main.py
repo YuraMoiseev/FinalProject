@@ -93,13 +93,13 @@ def CompareNoteSequences(file1, file2, melody_length=7):
     res = (-1, -1), (-1, -1), -1
     for i in range(len(arr1)):
         for j in range(len(arr2)):
-            r1 = ClosestMelodies(arr1[i], arr2[i], melody_length)
+            r1 = ClosestSequences(arr1[i], arr2[i], melody_length)
             if r1[1] > res[2] or res[2] == -1:
                 res = (i, j), r1[0], r1[1]
     return res
 
 
-def ClosestMelodies(arr1: list, arr2: list, sublength: int):
+def ClosestSequences(arr1: list, arr2: list, sublength: int):
     if sublength > min(len(arr1), len(arr2)):
         raise Exception(f"Invalid sublist length - {len(arr1)}; {len(arr2)} < {sublength}")
     res = (-1, -1), -1
