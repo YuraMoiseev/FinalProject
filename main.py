@@ -1,6 +1,6 @@
 from mido import *
 import editdistance
-from sortedcontainers import SortedList
+from sortedcontainers import SortedDict
 
 # currently just experimenting with comparing .mid files
 
@@ -80,15 +80,15 @@ def TimingSequences(file):
 # MAIN FUNC FOR NOW!!!
 def CompareMelodies(file1, file2, melody_length=-1):
     Melodies_1, Melodies_2 = (NoteSequences(file1), TimingSequences(file1)), (NoteSequences(file2), TimingSequences(file2))
-    # set our basic case, if the function returns this value, midi file did not contain any melodies
-    res = (-1, -1), (-1, -1), -1
+    # set a sorted dictionary to keep all tracks sorted by similarity
+    all_melodies = SortedDict()
     for i in range(len(Melodies_1[0])):
         for j in range(len(Melodies_2[1])):
-            # for each track we go through, we find the most similar spot
-            r1 = ClosestSequences(Melodies_1[0][i], Melodies_1[1][i], Melodies_2[0][j], Melodies_2[1][j], melody_length)
-            if r1[1] > res[2] or res[2] == -1:
-                res = (i, j), r1[0], r1[1]
-    return res
+            # for each track find the most similar spot
+            melody_comp = ClosestSequences(Melodies_1[0][i], Melodies_1[1][i], Melodies_2[0][j], Melodies_2[1][j], melody_length)
+            # key - similarity of melodies, value - their location (tracks, starting notes)
+            all_melodies[melody_comp[1]] = ((i, j), melody_comp[0])
+    return all_melodies
 
 
 
