@@ -110,19 +110,41 @@ def ClosestMelodies(arr1: list, arr2: list, sublength: int):
     return res
 
 
-def ListDifference(arr1: list, arr2: list):
-    def diff(sublist1, sublist2):
-        s1, s2 = sublist1.sorted(), sublist2.sorted()
-        length = min(len(s1), len(s2))
-        diffs = sum([abs(s1[i]-s2[i])] for i in range(length))
-        return diffs
+# find the difference between the closest number in the list
+def diff(arr1: list, arr2: list):
+    if (type(arr1) != list):
+        arr1 = [arr1]
+    if (type(arr2) != list):
+        arr2 = [arr2]
+    if len(arr1) < len(arr2):
+        arr1, arr2 = arr2, arr1
+    arr1.sort()
+    arr2.sort()
+    id1, id2 = 0,0
+    sum = 0
+    while id1 < len(arr1) and id2 < len(arr2):
+        if arr1[id1] == arr2[id2]:
+            id1, id2 = id1+1, id2+1
+        elif arr1[id1] > arr2[id2] and arr1[id1] < arr2[id2+1]:
+            sum+= min(abs(arr1[id1]-arr2[id2]), abs(arr1[id1]-arr2[id2+1]))
+            id1 += 1
+        elif arr1[id1] < arr2[id2]:
+            id1+=1
+        elif arr1[id1] > arr2[id2]:
+            id2+=1
+    return sum
 
+
+
+
+def ListDifference(arr1: list, arr2: list):
     if len(arr1) != len(arr2):
         raise Exception(f"Invalid list length - {len(arr1)} {len(arr2)}")
     return sum([diff(arr1[i], arr2[i]) for i in range(len(arr1))])
 
 
 def ClosestTiming(file1, file2):
+    f1, f2 = MidiFile(file1, clip=True), MidiFile(file2, clip=True)
     pass
 
 
@@ -167,6 +189,9 @@ def compare_midi_files2(file1, file2):
     # Calculate similarity for each group of pitches
     return manhattan_distance(notes1, notes2)
 
+
+a1, a2 = [5,4,2,8,1], [8,5,3,10]
+print(diff(a1, a2))
 # Min heap of melodies by difference
 
 
