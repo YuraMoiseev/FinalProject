@@ -1,4 +1,6 @@
 import threading
+from uuid import bytes_
+
 from protocol import *
 
 # events
@@ -86,9 +88,8 @@ class CClientHandler(threading.Thread):
 
     def receive_wav(self):
         try:
-            with open('output', 'wb') as f:
+            with open('test_receive.wav', 'wb') as f:
                 while True:
-                    # read 1024 bytes from the socket (receive)
                     bytes_read = self.client_socket.recv(BUFFER_SIZE)
                     if not bytes_read:
                         # nothing is received
@@ -96,6 +97,7 @@ class CClientHandler(threading.Thread):
                         break
                     # write to the file the bytes we just received
                     f.write(bytes_read)
+                    write_to_log(f"{not bytes_read}")
             return True
         except Exception as e:
             write_to_log("[CClientHandler] Exception in receive_wav: {}".format(e))
@@ -123,6 +125,7 @@ class CClientHandler(threading.Thread):
                 self.client_socket.send(response.encode(FORMAT))
                 # 7. If client sent file transfer request - invoke file receive event
                 if response == f"{len(SEND_FILE_APPROVE):0{HEADER_LEN}d}{SEND_FILE_APPROVE}":
+                    write_to_log("[SERVER_BL] receiving wav...")
                     is_recv = self.receive_wav()
                     if is_recv:
                         self.client_socket.send(create_response_msg(SEND_FILE_SUCCESS).encode(FORMAT))

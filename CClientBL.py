@@ -1,5 +1,3 @@
-from asyncore import write
-
 from protocol import *
 
 
@@ -53,11 +51,10 @@ class CClientBL:
                         if not bytes_read:
                             # file transmitting is done
                             break
-                        # we use sendall to assure transimission in
-                        # busy networks
-                        self._client_socket.sendall(bytes_read)
+                        self._client_socket.send(bytes_read)
+                    self._client_socket.send(f.read(BUFFER_SIZE))
                 # write to log that client sent the file
-                write_to_log(f"[CLIENT_BL] send {self._client_socket.getsockname()} wav file {file_name}")
+                write_to_log(f"[CLIENT_BL] sent {self._client_socket.getsockname()} wav file {file_name}")
                 # write to log if the server has received the file
                 write_to_log(f"[CLIENT_BL] received from [SERVER_BL] {self.receive_data()}")
                 return True
