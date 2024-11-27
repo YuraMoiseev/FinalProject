@@ -1,3 +1,5 @@
+from asyncore import write
+
 from protocol import *
 
 
@@ -38,6 +40,31 @@ class CClientBL:
             return True
         except Exception as e:
             write_to_log("[CLIENT_BL] Exception on send_data: {}".format(e))
+            return False
+
+    def send_wav(self, file_name: str) -> bool:
+        self.send_data(SEND_FILE_REQUEST)
+        try:
+            if client.receive_data()==SEND_FILE_APPROVE:
+                with open(file_name, 'rb') as f:
+                    while True:
+                        # read the bytes from the file
+                        bytes_read = f.read(BUFFER_SIZE)
+                        if not bytes_read:
+                            # file transmitting is done
+                            break
+                        # we use sendall to assure transimission in
+                        # busy networks
+                        self._client_socket.sendall(bytes_read)
+                # write to log that client sent the file
+                write_to_log(f"[CLIENT_BL] send {self._client_socket.getsockname()} wav file {file_name}")
+                # write to log if the server has received the file
+                write_to_log(f"[CLIENT_BL] received from [SERVER_BL] {self.receive_data()}")
+                return True
+            else:
+                raise Exception(f"[CLIENT_BL] - sending {file_name} was not approved")
+        except Exception as e:
+            write_to_log("[CLIENT_BL] Exception on send_wav: {}".format(e))
             return False
 
     def receive_data(self) -> str:

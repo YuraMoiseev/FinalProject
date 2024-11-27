@@ -84,6 +84,23 @@ class CClientHandler(threading.Thread):
         self.address = address
         self.callback = fn
 
+    def receive_wav(self):
+        try:
+            with open('output', 'wb') as f:
+                while True:
+                    # read 1024 bytes from the socket (receive)
+                    bytes_read = self.client_socket.recv(BUFFER_SIZE)
+                    if not bytes_read:
+                        # nothing is received
+                        # file transmitting is done
+                        break
+                    # write to the file the bytes we just received
+                    f.write(bytes_read)
+            return True
+        except Exception as e:
+            write_to_log("[CClientHandler] Exception in receive_wav: {}".format(e))
+            return False
+
     def run(self):
         # This code run in separate thread for every client
         connected = True
@@ -104,6 +121,15 @@ class CClientHandler(threading.Thread):
                 write_to_log("[SERVER_BL] send - " + response)
                 # 6. Send response to the client
                 self.client_socket.send(response.encode(FORMAT))
+                # 7. If client sent file transfer request - invoke file receive event
+                if response == f"{len(SEND_FILE_APPROVE):0{HEADER_LEN}d}{SEND_FILE_APPROVE}":
+                    is_recv = self.receive_wav()
+                    if is_recv:
+                        self.client_socket.send(create_response_msg(SEND_FILE_SUCCESS).encode(FORMAT))
+                        write_to_log(f"[SERVER_BL] {SEND_FILE_SUCCESS}")
+                    else:
+                        self.client_socket.send(create_response_msg(SEND_FILE_FAIL).encode(FORMAT))
+                        write_to_log(f"[SERVER_BL] {SEND_FILE_FAIL}")
                 # Handle DISCONNECT command
                 if msg == DISCONNECT_MSG:
                     connected = False

@@ -12,11 +12,14 @@ HEADER_LEN: int = 4
 FORMAT: str = 'utf-8'
 DISCONNECT_MSG: str = "EXIT"
 REG_MSG: str = "Registration request received"
+SEND_FILE_REQUEST: str = "Song"
+SEND_FILE_APPROVE: str = "Approve"
+SEND_FILE_SUCCESS: str = "Wav file successfully transferred"
+SEND_FILE_FAIL: str = "Count not transfer wav file"
 
 
 def compare_melody(client_data, db_data):
     # will compare the entered melody to the melodies of some specific song in db
-    
     pass
 
 
@@ -25,7 +28,7 @@ def best_matches(data):
     pass
 
 
-REQUESTS = {"Hello": "Hello!", "Find": best_matches}
+REQUESTS = {"Hello": "Hello!", "Find": best_matches, SEND_FILE_REQUEST:SEND_FILE_APPROVE, SEND_FILE_SUCCESS:SEND_FILE_SUCCESS, SEND_FILE_FAIL:SEND_FILE_FAIL}
 
 # prepare Log file
 LOG_FILE = 'LOG.log'
