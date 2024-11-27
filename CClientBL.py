@@ -86,5 +86,8 @@ if __name__ == "__main__":
     client.connect()
     client.send_data("Hello")
     write_to_log(client.receive_data())
+    client.send_wav("test.wav")
+    write_to_log(client.receive_data())
+
 
 
