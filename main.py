@@ -44,22 +44,6 @@ def NoteSequences(file):
     return res
 
 
-def NoteSequences1(file):
-    f = MidiFile(file, clip=True)
-    res = []
-    for i in f.tracks:
-        res1 = []
-        sub_res1 = []
-        for j in range(1, len(i)):
-            if hasattr(i[j-1], "note") and i[j-1].type == "note_on":
-                sub_res1.append(i[j-1].note)
-                if i[j].type == "note_off" or i[j].time != 0:
-                    res1.append(sub_res1)
-                    sub_res1 = []
-        res.append(res1)
-    return res
-
-
 def TimingSequences(file):
     f = MidiFile(file, clip=True)
     res = []
@@ -115,33 +99,3 @@ def ListDifference(arr1: list, arr2: list):
 
 
 print(CompareMelodies("Temp1.mid", "Temp9.mid", 16))
-
-# Min heap of melodies by difference
-
-# notes = PresentNotes("Temp2.mid")
-# print(notes)
-#
-#
-# for i in range(0, len(Temps[6].tracks[0])):
-#     if hasattr(Temps[6].tracks[0][i], "note"):
-#         print(Temps[6].tracks[0][i].note, Temps[6].tracks[0][i].type, Temps[6].tracks[0][i].time, end=" -> ")
-
-
-# Temps = []
-# for i in range(7):
-#     Temps.append(MidiFile(f"Temp{i+1}.mid", clip=True))
-#
-# print(Temps[1].tracks[0])
-
-# print(CompareSequences("Temp2.mid", "Temp1.mid"))
-
-
-# for i in range(1, len(Temps[1].tracks[0])):
-#     if hasattr(Temps[1].tracks[0][i], "type") and Temps[1].tracks[0][i].type == 'note_on' \
-#             and Temps[1].tracks[0][i-1].type == "note_off" and Temps[1].tracks[0][i-1].time != 0:
-#         Temps[1].tracks[0][i].time = 0
-#
-# print(Temps[1].tracks[0][:10])
-#
-#
-# Temps[1].save("new_song.mid")
