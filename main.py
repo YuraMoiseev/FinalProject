@@ -145,9 +145,6 @@ def ListDifference(arr1: list, arr2: list):
         raise Exception(f"Invalid list length - {len(arr1)} {len(arr2)}")
     return sum([diff(arr1[i], arr2[i]) for i in range(len(arr1))])
 
-
-print(CompareMelodies("Temp1.mid", "Temp9.mid", 16))
-
 # Min heap of melodies by difference
 
 # notes = PresentNotes("Temp2.mid")

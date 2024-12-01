@@ -1,4 +1,6 @@
 from protocol import *
+import os
+
 
 
 class CClientBL:
@@ -43,19 +45,24 @@ class CClientBL:
     def send_wav(self, file_name: str) -> bool:
         self.send_data(SEND_FILE_REQUEST)
         try:
-            if client.receive_data()==SEND_FILE_APPROVE:
+            if self.receive_data() == SEND_FILE_APPROVE:
+                # Get the size of the file
+                file_size = os.path.getsize(file_name)
+
+                # Send the file size as a string followed by a newline
+                self._client_socket.send(f"{file_size}\n".encode())
+
+                # Send the file data
                 with open(file_name, 'rb') as f:
                     while True:
-                        # read the bytes from the file
                         bytes_read = f.read(BUFFER_SIZE)
                         if not bytes_read:
-                            # file transmitting is done
+                            # File transmission is done
                             break
                         self._client_socket.send(bytes_read)
-                    self._client_socket.send(f.read(BUFFER_SIZE))
-                # write to log that client sent the file
+
+                # Log the file transfer
                 write_to_log(f"[CLIENT_BL] sent {self._client_socket.getsockname()} wav file {file_name}")
-                # write to log if the server has received the file
                 write_to_log(f"[CLIENT_BL] received from [SERVER_BL] {self.receive_data()}")
                 return True
             else:
@@ -84,7 +91,9 @@ if __name__ == "__main__":
     client.send_data("Hello")
     write_to_log(client.receive_data())
     client.send_wav("test.wav")
-    write_to_log(client.receive_data())
+    client.send_wav("test.wav")
+    client.disconnect()
+
 
 
 

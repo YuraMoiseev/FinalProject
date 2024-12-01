@@ -1,6 +1,4 @@
 import threading
-from uuid import bytes_
-
 from protocol import *
 
 # events
@@ -8,6 +6,7 @@ NEW_CONNECTION: int = 1
 REGISTER_APPROVE: int = 2
 REGISTER_REQUEST: int = 3
 CLOSE_CONNECTION: int = 4
+count_wav = 0
 
 
 class CServerBL:
@@ -86,18 +85,39 @@ class CClientHandler(threading.Thread):
         self.address = address
         self.callback = fn
 
-    def receive_wav(self):
+    def receive_wav(self, file_name):
         try:
-            with open('test_receive.wav', 'wb') as f:
-                while True:
-                    bytes_read = self.client_socket.recv(BUFFER_SIZE)
+            global count_wav
+            # Read the file size as a string until the newline character
+            file_size_str = b""
+            while not file_size_str.endswith(b"\n"):
+                chunk = self.client_socket.recv(1)
+                if not chunk:
+                    raise Exception("Failed to read file size from the client.")
+                file_size_str += chunk
+
+            # Convert the file size from string to integer
+            file_size = int(file_size_str.decode().strip())
+
+            bytes_received = 0
+            with open(file_name, 'wb') as f:
+                while bytes_received < file_size:
+                    # Calculate remaining bytes to read
+                    remaining_bytes = file_size - bytes_received
+                    # If there are less remaining bytes than the general buffer size, choose a corresponding buffer size
+                    bytes_to_read = min(BUFFER_SIZE, remaining_bytes)
+
+                    # Read the next chunk
+                    bytes_read = self.client_socket.recv(bytes_to_read)
                     if not bytes_read:
-                        # nothing is received
-                        # file transmitting is done
-                        break
-                    # write to the file the bytes we just received
+                        # Unexpected disconnection
+                        raise Exception("Connection lost before file transfer was complete.")
+
+                    # Write to file and update received byte count
                     f.write(bytes_read)
-                    write_to_log(f"{not bytes_read}")
+                    bytes_received += len(bytes_read)
+            # One more wav file added
+            count_wav += 1
             return True
         except Exception as e:
             write_to_log("[CClientHandler] Exception in receive_wav: {}".format(e))
@@ -126,7 +146,8 @@ class CClientHandler(threading.Thread):
                 # 7. If client sent file transfer request - invoke file receive event
                 if response == f"{len(SEND_FILE_APPROVE):0{HEADER_LEN}d}{SEND_FILE_APPROVE}":
                     write_to_log("[SERVER_BL] receiving wav...")
-                    is_recv = self.receive_wav()
+                    # new file name is defined by how many files we have created
+                    is_recv = self.receive_wav(f"file{count_wav+1}.wav")
                     if is_recv:
                         self.client_socket.send(create_response_msg(SEND_FILE_SUCCESS).encode(FORMAT))
                         write_to_log(f"[SERVER_BL] {SEND_FILE_SUCCESS}")
