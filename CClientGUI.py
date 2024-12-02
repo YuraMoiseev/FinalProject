@@ -5,56 +5,37 @@ from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QVBoxLayout, QTe
 from PyQt5 import uic
 
 
-class CClientGUI(CClientBL):
-
+class CClientGUI(CClientBL, QMainWindow):
     def __init__(self, host, port):
+        CClientBL.__init__(self, host, port)
+        QMainWindow.__init__(self)
 
-        super().__init__(host, port)
+        self.label = None
+        self.button_reg = None
+        self.button_login = None
 
-        self.app = None
-        self.window = None
-        self.layout = None
+        self.create_homepage_ui()
 
-        self.create_ui()
+    def create_homepage_ui(self):
+        uic.loadUi("TempUI.ui", self)
 
-    def create_ui(self):
-        self.app = QApplication([])
-        self.window = QWidget()
-        self.layout = QVBoxLayout()
-        self.layout.addWidget(QPushButton('Top'))
-        self.layout.addWidget(QPushButton('Bottom'))
-        self.window.setLayout(self.layout)
-        self.window.show()
-        self.app.exec()
-
-
-class UI(QMainWindow):
-    def __init__(self):
-        super(UI, self).__init__()
-
-        # Load the ui file
-        uic.loadUi("LogInTemp.ui", self)
-
-        # Define Widgets
         self.label = self.findChild(QLabel, "label")
         self.button_reg = self.findChild(QPushButton, "pushButton")
         self.button_login = self.findChild(QPushButton, "pushButton_2")
-        self.button_reg.clicked.connect(self.Register)
-        self.button_login.clicked.connect(self.Login)
+
+        self.button_reg.clicked.connect(self.on_click_register)
+        self.button_login.clicked.connect(self.on_click_login)
 
         self.show()
 
-    def Register(self):
-        print(1)
+    def on_click_register(self):
+        print("Register")
 
-    def Login(self):
-        print(2)
+    def on_click_login(self):
+        print("Login")
 
 
 if __name__ == "__main__":
-    # Client = CClientGUI(CLIENT_HOST, PORT)
     app = QApplication(sys.argv)
-    Wnd = UI()
+    Client = CClientGUI(CLIENT_HOST, PORT)
     app.exec_()
-
-
