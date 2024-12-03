@@ -45,6 +45,7 @@ class CServerBL:
 
     def start_server(self):
         try:
+            create_users_table()
             # initialise the server socket and listen
             self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self._server_socket.bind((self._host, self._port))
