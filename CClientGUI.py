@@ -286,6 +286,7 @@ class MainWindow(QMainWindow):
 
         self.send_entry = self.findChild(QLineEdit, "LineEditSend")
         self.receive_entry = self.findChild(QLineEdit, "LineEditReceive")
+        self.receive_entry.setReadOnly(True)
 
         self.button_send = self.findChild(QPushButton, "ButtonSend")
         self.button_back = self.findChild(QPushButton, "ButtonBack")
