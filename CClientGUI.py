@@ -121,7 +121,7 @@ class CClientGUI(CClientBL, QMainWindow):
         def back_home():
             self.show()
 
-        obj = CLoginGUI(callback_home=back_home, callback_register=callback_register, callback_login=None)
+        obj = CLoginGUI(callback_home=back_home, callback_register=callback_register)
         self.windows.append(obj)
         self.hide()
         obj.create_register_ui()
@@ -134,18 +134,31 @@ class CClientGUI(CClientBL, QMainWindow):
             write_to_log(recv)
             return recv == LOGIN_SUCCESS
 
-
         def back_home():
             self.show()
 
-        obj = CLoginGUI(callback_home=back_home, callback_register=None, callback_login=callback_login)
+        def login_user():
+            def send(data):
+                self.send_data(data)
+                answer = self.receive_data()
+                return answer
+
+            if any(isinstance(i, CLoginGUI) for i in self.windows):
+                self.windows.clear()
+            mw = MainWindow(callback_home=back_home,callback_send=send)
+            self.windows.append(mw)
+            self.hide()
+            mw.create_main_ui()
+
+
+        obj = CLoginGUI(callback_home=back_home, callback_login=callback_login, callback_login_user=login_user)
         self.windows.append(obj)
         self.hide()
         obj.create_login_ui()
 
 
 class CLoginGUI(QDialog):
-    def __init__(self, callback_home=None, callback_register=None, callback_login=None):
+    def __init__(self, callback_home=None, callback_register=None, callback_login=None, callback_login_user=None):
         QDialog.__init__(self)
 
         self.label_login = None
@@ -166,6 +179,7 @@ class CLoginGUI(QDialog):
         self._callback_register = callback_register
         self._callback_login = callback_login
         self._callback_home = callback_home
+        self._callback_login_user = callback_login_user
 
     def create_login_ui(self):
         uic.loadUi("LoginGUI.ui", self)
@@ -240,11 +254,57 @@ class CLoginGUI(QDialog):
         if not success:
             self.label_login_fail.show()
         else:
-            self.back_to_home()
+            self._callback_login_user()
 
 
     def forgot_pw(self):
         write_to_log("Pomnit' Nada")
+
+
+class MainWindow(QMainWindow):
+    def __init__(self, callback_home=None, callback_send=None):
+        QMainWindow.__init__(self)
+
+        self._callback_home = callback_home
+        self._callback_send = callback_send
+
+        self.label_entry = None
+        self.label_receive = None
+
+        self.send_entry = None
+        self.receive_entry = None
+
+        self.button_send = None
+        self.button_back = None
+
+    def create_main_ui(self):
+        uic.loadUi("MainWindowGUI.ui", self)
+        self.setFixedSize(500, 700)
+
+        self.label_entry = self.findChild(QLabel, "LabelSend")
+        self.label_receive = self.findChild(QLabel, "LabelReceive")
+
+        self.send_entry = self.findChild(QLineEdit, "LineEditSend")
+        self.receive_entry = self.findChild(QLineEdit, "LineEditReceive")
+
+        self.button_send = self.findChild(QPushButton, "ButtonSend")
+        self.button_back = self.findChild(QPushButton, "ButtonBack")
+        self.button_back.clicked.connect(self.on_click_back)
+        self.button_send.clicked.connect(self.on_click_send)
+        self.show()
+
+
+    def on_click_send(self):
+        data = self.send_entry.text()
+        answer = self._callback_send(data)
+        if not answer:
+            self.send_entry.setText("Server didn't answer...")
+        else:
+            self.receive_entry.setText(answer)
+
+    def on_click_back(self):
+        self._callback_home()
+        self.close()
 
 
 if __name__ == "__main__":

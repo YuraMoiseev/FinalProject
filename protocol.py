@@ -161,4 +161,4 @@ def write_to_log(msg):
 
 REQUESTS = {"Hello": "Hello!", "Find": best_matches, SEND_FILE_REQUEST:SEND_FILE_APPROVE,
             SEND_FILE_SUCCESS:SEND_FILE_SUCCESS, SEND_FILE_FAIL:SEND_FILE_FAIL, DISCONNECT_MSG: "Bye!",
-            "Register": "", "Login": ""}
+            "Register": "", "Login": "", "Question": "Answer", "How do I become a coder?": "ChatGPT(no)"}
