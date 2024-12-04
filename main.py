@@ -20,6 +20,7 @@ from sortedcontainers import SortedDict
 TIMING_CONST = 24
 TIMING_WEIGHT = 0.1
 MELODY_WEIGHT = 1 - TIMING_WEIGHT
+PERCENTAGE_WEIGHT = 0.1
 
 
 def PresentNotes(file):
@@ -97,5 +98,9 @@ def ListDifference(arr1: list, arr2: list):
         raise Exception(f"Invalid list length - {len(arr1)} {len(arr2)}")
     return sum([abs(arr1[i] - arr2[i]) for i in range(len(arr1))])
 
+def similarity_percentage(file1, file2, length):
+    return f'{1/(next(iter(CompareMelodies("Temp1.mid", "Temp9.mid", 16)))*PERCENTAGE_WEIGHT+1)}'[:6] + "%"
 
-print(CompareMelodies("Temp1.mid", "Temp9.mid", 16))
+
+
+print(similarity_percentage("Temp1.mid", "Temp9.mid", 16))
