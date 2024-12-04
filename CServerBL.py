@@ -99,6 +99,9 @@ class CClientHandler(threading.Thread):
 
             # Convert the file size from string to integer
             file_size = int(file_size_str.decode().strip())
+            if file_size == 0:
+                write_to_log("[SERVER_BL] File size is 0, file not saved")
+                return True
 
             bytes_received = 0
             with open(file_name, 'wb') as f:

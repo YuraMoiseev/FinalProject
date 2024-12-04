@@ -69,6 +69,9 @@ class CClientBL:
                 raise Exception(f"[CLIENT_BL] - sending {file_name} was not approved")
         except Exception as e:
             write_to_log("[CLIENT_BL] Exception on send_wav: {}".format(e))
+            self._client_socket.send(f"{0}\n".encode())
+            self._client_socket.send(b"0")
+            write_to_log(f"[CLIENT_BL] received from [SERVER_BL] {self.receive_data()}")
             return False
 
     def receive_data(self) -> str:
@@ -91,6 +94,8 @@ if __name__ == "__main__":
     client.send_data("Hello")
     write_to_log(client.receive_data())
     client.send_wav("test.wav")
+    client.send_wav("test.wav")
+    client.send_wav("test1.wav")
     client.send_wav("test.wav")
     client.disconnect()
 
