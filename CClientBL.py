@@ -1,7 +1,11 @@
+from cryptography.hazmat.primitives.asymmetric.ec import ECDSA
+
 from protocol import *
 import os
+import pyaudio
+import wave
 
-
+RECORD = True
 
 class CClientBL:
 
@@ -43,6 +47,9 @@ class CClientBL:
             return False
 
     def send_wav(self, file_name: str) -> bool:
+        if not os.path.exists(file_name):
+            write_to_log(f"[CLIENT_BL] - file does not exist: {file_name}")
+            return False
         self.send_data(SEND_FILE_REQUEST)
         try:
             if self.receive_data() == SEND_FILE_APPROVE:
@@ -74,6 +81,58 @@ class CClientBL:
             write_to_log(f"[CLIENT_BL] received from [SERVER_BL] {self.receive_data()}")
             return False
 
+    def record_wav(self, file_name: str) -> bool:
+        try:
+            chunk = 1024  # Record in chunks of 1024 samples
+            sample_format = pyaudio.paInt16  # 16 bits per sample
+            channels = 2
+            fs = 44100  # Record at 44100 samples per second
+
+            p = pyaudio.PyAudio()  # Create an interface to PortAudio
+
+            write_to_log('[CLIENT_BL] Recording wav file...')
+
+            stream = p.open(format=sample_format,
+                            channels=channels,
+                            rate=fs,
+                            frames_per_buffer=chunk,
+                            input=True)
+
+            frames = []  # Initialize array to store frames
+
+            # Store data in chunks while recording
+            while True:
+                data = stream.read(chunk)
+                frames.append(data)
+                if not RECORD:
+                    break
+            # Stop and close the stream
+            stream.stop_stream()
+            stream.close()
+            # Terminate the PortAudio interface
+            p.terminate()
+
+            write_to_log('[CLIENT_BL] finished recording')
+
+            # Save the recorded data as a WAV file
+            wf = wave.open(file_name, 'wb')
+            wf.setnchannels(channels)
+            wf.setsampwidth(p.get_sample_size(sample_format))
+            wf.setframerate(fs)
+            wf.writeframes(b''.join(frames))
+            wf.close()
+            return True
+
+        except Exception as e:
+            write_to_log("[CLIENT_BL] Exception on record_wav: {}".format(e))
+            return False
+
+
+    def stop_record(self):
+        global RECORD
+        RECORD = False
+
+
     def receive_data(self) -> str:
         try:
             (bres, msg) = receive_msg(self._client_socket)
@@ -93,10 +152,13 @@ if __name__ == "__main__":
     client.connect()
     client.send_data("Hello")
     write_to_log(client.receive_data())
-    client.send_wav("test.wav")
-    client.send_wav("test.wav")
-    client.send_wav("test1.wav")
-    client.send_wav("test.wav")
+    # client.send_wav("test.wav")
+    # client.send_wav("test.wav")
+    # client.send_wav("test1.wav")
+    # client.send_wav("test.wav")
+    data = {'login': 1234567, 'email': 12345678, 'password': 12345789}
+    client.send_data(f"Register>{data}")
+    client.receive_data()
     client.disconnect()
 
 

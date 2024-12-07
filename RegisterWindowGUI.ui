@@ -269,8 +269,11 @@ color: #00ff00;</string>
    </item>
    <item alignment="Qt::AlignHCenter">
     <widget class="QLabel" name="LabelRegFail">
+     <property name="styleSheet">
+      <string notr="true"> font-size:18pt; color:#ff0000;</string>
+     </property>
      <property name="text">
-      <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-size:18pt; color:#ff0000;&quot;&gt;Register attempt unsuccessful. &lt;/span&gt;&lt;/p&gt;&lt;p&gt;&lt;span style=&quot; font-size:18pt; color:#ff0000;&quot;&gt;Such username/email already exists.&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+      <string/>
      </property>
     </widget>
    </item>

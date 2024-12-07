@@ -5,14 +5,56 @@ from PyQt5.QtCore import QPropertyAnimation, QSequentialAnimationGroup, QParalle
 from PyQt5 import uic
 
 
+class CConnectGUI(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.title_label = None
+        self.host_label = None
+        self.port_label = None
+
+        self.host_entry = None
+        self.port_entry = None
+
+        self.connect_button = None
+
+        self.create_connect_wnd()
+
+        self.client = None
+
+    def create_connect_wnd(self):
+        uic.loadUi('ConnectWindowGUI.ui', self)
+        self.setFixedSize(400, 400)
+        self.title_label = self.findChild(QLabel, "LabelTitle")
+        self.host_label = self.findChild(QLabel, "LabelHost")
+        self.port_label = self.findChild(QLabel, "LabelPort")
+
+        self.host_entry = self.findChild(QLineEdit, "LineEditHost")
+        self.host_entry.setText(str(CLIENT_HOST))
+        self.port_entry = self.findChild(QLineEdit, "LineEditPort")
+        self.port_entry.setText(str(PORT))
+
+        self.connect_button = self.findChild(QPushButton, "ButtonConnect")
+        self.connect_button.clicked.connect(self.on_click_connect)
+        self.show()
+
+    def on_click_connect(self):
+        def back_home():
+            self.show()
+        self.client = CClientGUI(host=self.host_entry.text(), port=int(self.port_entry.text()), callback_back=back_home)
+        self.hide()
+
+
 class CClientGUI(CClientBL, QMainWindow):
-    def __init__(self, host, port):
+    def __init__(self, host, port, callback_back=None):
         CClientBL.__init__(self, host, port)
         QMainWindow.__init__(self)
+
+        self.callback_home = callback_back
 
         self.welcome_label = None
         self.button_reg = None
         self.button_login = None
+        self.button_back = None
         self.windows = []
 
         self.welcome_label_anim = None
@@ -25,10 +67,17 @@ class CClientGUI(CClientBL, QMainWindow):
         else:
             self.create_error_wnd()
 
+
     def create_error_wnd(self):
         uic.loadUi('ErrorWindowGUI.ui', self)
         self.setFixedSize(600, 400)
+        self.button_back = self.findChild(QPushButton, "ButtonBack")
+        self.button_back.clicked.connect(self.on_click_back)
         self.show()
+
+    def on_click_back(self):
+        self.callback_home()
+        self.close()
 
     def welcome_label_animation(self):
         try:
@@ -64,6 +113,7 @@ class CClientGUI(CClientBL, QMainWindow):
             button_login_anim.setStartValue(0)
             button_login_anim.setEndValue(1)
             button_login_anim.setDuration(2500)
+
             self.buttons_anim = QParallelAnimationGroup()
             self.buttons_anim.addAnimation(button_reg_anim)
             self.buttons_anim.addAnimation(button_login_anim)
@@ -93,21 +143,22 @@ class CClientGUI(CClientBL, QMainWindow):
 
     def create_homepage_ui(self):
         uic.loadUi("HomePageGUI.ui", self)
-        self.setFixedSize(600, 400)
+        self.setFixedSize(600, 475)
 
         self.welcome_label = self.findChild(QLabel, "LabelWelcome")
         self.button_reg = self.findChild(QPushButton, "ButtonRegister")
         self.button_reg.setFixedSize(200, 50)
         self.button_login = self.findChild(QPushButton, "ButtonLogin")
         self.button_login.setFixedSize(200, 50)
+        self.button_back = self.findChild(QPushButton, "ButtonBack")
 
         self.button_reg.clicked.connect(self.on_click_register)
         self.button_login.clicked.connect(self.on_click_login)
+        self.button_back.clicked.connect(self.on_click_back)
 
         self.window_animation()
 
         self.show()
-
 
     def on_click_register(self):
 
@@ -132,7 +183,7 @@ class CClientGUI(CClientBL, QMainWindow):
             self.send_data(f"Login>{data}")
             recv = self.receive_data()
             write_to_log(recv)
-            return recv == LOGIN_SUCCESS
+            return recv == LOGIN_SUCCESS, recv
 
         def back_home():
             self.show()
@@ -145,10 +196,10 @@ class CClientGUI(CClientBL, QMainWindow):
 
             if any(isinstance(i, CLoginGUI) for i in self.windows):
                 self.windows.clear()
-            mw = MainWindow(callback_home=back_home,callback_send=send)
-            self.windows.append(mw)
+            main_window = MainWindow(callback_home=back_home,callback_send=send)
+            self.windows.append(main_window)
             self.hide()
-            mw.create_main_ui()
+            main_window.create_main_ui()
 
 
         obj = CLoginGUI(callback_home=back_home, callback_login=callback_login, callback_login_user=login_user)
@@ -201,14 +252,14 @@ class CLoginGUI(QDialog):
 
 
         self.button_login.clicked.connect(self.on_click_login)
-        self.button_forgot_pw.clicked.connect(self.forgot_pw)
+        self.button_forgot_pw.clicked.connect(self.on_click_forgot_pw)
         self.button_back.clicked.connect(self.back_to_home)
 
         self.show()
 
     def create_register_ui(self):
         uic.loadUi("RegisterWindowGUI.ui", self)
-        self.setFixedSize(500, 700)
+        self.setFixedSize(700, 700)
 
         self.label_reg_fail = self.findChild(QLabel, "LabelRegFail")
         self.label_reg_fail.hide()
@@ -251,13 +302,14 @@ class CLoginGUI(QDialog):
         password_text = self.password_entry.text()
         data = {"login": login_text, "password": password_text}
         success = self._callback_login(data)
-        if not success:
+        if not success[0]:
+            self.label_login_fail.setText(success[1])
             self.label_login_fail.show()
         else:
             self._callback_login_user()
 
 
-    def forgot_pw(self):
+    def on_click_forgot_pw(self):
         write_to_log("Pomnit' Nada")
 
 
@@ -310,5 +362,5 @@ class MainWindow(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication([])
-    Client = CClientGUI(CLIENT_HOST, PORT)
+    Client = CConnectGUI()
     app.exec_()

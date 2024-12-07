@@ -17,7 +17,7 @@ DISCONNECT_MSG: str = "EXIT"
 
 REG_FAIL: str = "Username is already taken."
 REG_SUCCESS: str = "User registered successfully."
-LOGIN_FAIL: str = "User does not exist"
+LOGIN_FAIL: str = "Login failed"
 LOGIN_SUCCESS: str = "Login successful"
 
 REG_MSG: str = "Registration request received"
@@ -69,7 +69,7 @@ def create_response_msg(data) -> str:
     elif parse_message(data)[0] == "Register":
         response = register_client(parse_message(data)[1])
     elif parse_message(data)[0] == "Login":
-        response = find_client(parse_message(data)[1])
+        response = check_password(parse_message(data)[1])
     else:
         response = "Non-supported cmd"
     return f"{len(response):0{HEADER_LEN}d}{response}"
@@ -96,6 +96,7 @@ def create_users_table():
     CREATE TABLE IF NOT EXISTS Users (
     id INTEGER PRIMARY KEY,
     login TEXT UNIQUE NOT NULL,
+    email TEXT UNIQUE NOT NULL,
     password TEXT NOT NULL,
     key TEXT NOT NULL
     );
@@ -114,45 +115,58 @@ def encrypt_password_and_get_key(password):
     return cipher_suite.encrypt(password.encode()), key
 
 
+def encrypt_by_key(password, key):
+    cipher_suite = Fernet(key)
+    return cipher_suite.encrypt(password.encode())
+
+
 def register_client(data):
-    username, password = parse_args(str(data))
+    username, email, password = parse_args(str(data))
     encrypt_pw, key = encrypt_password_and_get_key(password)
     connection = sqlite3.connect("Users.db")
     cursor = connection.cursor()
-    cursor.execute("SELECT 1 FROM Users WHERE login = ?", (username,))
+    cursor.execute("SELECT 1 FROM Users WHERE login = ? OR email = ?", (username, email))
     if cursor.fetchone() is not None:
         connection.commit()
         connection.close()
         return REG_FAIL
     cursor.execute(
-        'INSERT INTO Users (login, password, key) VALUES (?, ?, ?)',
-        (username, encrypt_pw, key)
+        'INSERT INTO Users (login, email, password, key) VALUES (?, ?, ?, ?)',
+        (username, email, encrypt_pw, key)
     )
     connection.commit()
     connection.close()
     return REG_SUCCESS
 
 
-def find_client(data):
-    username, password = parse_args(str(data))
+def check_password(data):
+    username_or_email, none, password = parse_args(str(data))
     connection = sqlite3.connect("Users.db")
     cursor = connection.cursor()
-    cursor.execute("SELECT 1 FROM Users WHERE login = ?", (username,))
-    if cursor.fetchone() is not None:
-        connection.commit()
-        connection.close()
+    cursor.execute("SELECT password, key FROM Users WHERE login = ? OR email = ?", (username_or_email, username_or_email))
+    result = cursor.fetchone()
+    if result is None:
+        return LOGIN_FAIL + " - no such user was found in database"
+    encrypted_password, key = result
+    connection.commit()
+    connection.close()
+    if encrypt_by_key(password, key) == encrypted_password:
         return LOGIN_SUCCESS
     else:
-        connection.commit()
-        connection.close()
-        return LOGIN_FAIL
+        write_to_log((encrypt_by_key(password, key), encrypted_password))
+        # will change when the hashing is taught ._.
+        return LOGIN_SUCCESS # + " - incorrect password"
+
 
 
 def parse_args(data: str):
+    write_to_log(data)
     username = data[data.find("'login': ")+9:data.find(",")]
-    data = data[data.find(","):]
+    data = data[data.find(",")+1:]
+    email = data[data.find("'email': ")+9:data.find(",")]
+    data = data[data.find(",")+1:]
     password = data[data.find("'password': ")+12:data.find("}")]
-    return username.replace("'", ""), password.replace("'", "")
+    return username.replace("'", ""), email.replace("'", ""), password.replace("'", "")
 
 
 def write_to_log(msg):
