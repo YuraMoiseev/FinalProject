@@ -1,8 +1,43 @@
+import threading
+
 from protocol import *
 from CClientBL import CClientBL
 from PyQt5.QtWidgets import QApplication, QDialog, QPushButton, QMainWindow, QLabel, QLineEdit, QGraphicsOpacityEffect
 from PyQt5.QtCore import QPropertyAnimation, QSequentialAnimationGroup, QParallelAnimationGroup, QPoint
 from PyQt5 import uic
+
+BUTTON_STYLE_SHEET: str = '''QPushButton {
+                    font: 14pt "Arial";
+border-radius: 15px;
+border: 2px solid #00ff00;
+color: #00ff00;
+padding-top: 10px;
+padding-bottom: 10px;
+padding-left: 20px;
+padding-right: 20px; 
+                    }
+QPushButton:hover {
+                    font: 14pt "Arial";
+border-radius: 15px;
+border: 2px solid #00b300;
+color: #00b300;
+padding-top: 10px;
+padding-bottom: 10px;
+padding-left: 20px;
+padding-right: 20px; 
+                    }
+QPushButton:pressed {
+                    font: 14pt "Arial";
+border-radius: 15px;
+border: 2px solid #007000;
+color: #008000;
+padding-top: 10px;
+padding-bottom: 10px;
+padding-left: 20px;
+padding-right: 20px; 
+                    }
+
+'''
 
 
 class CConnectGUI(QMainWindow):
@@ -34,6 +69,7 @@ class CConnectGUI(QMainWindow):
         self.port_entry.setText(str(PORT))
 
         self.connect_button = self.findChild(QPushButton, "ButtonConnect")
+        self.connect_button.setStyleSheet(BUTTON_STYLE_SHEET)
         self.connect_button.clicked.connect(self.on_click_connect)
         self.show()
 
@@ -72,6 +108,7 @@ class CClientGUI(CClientBL, QMainWindow):
         uic.loadUi('ErrorWindowGUI.ui', self)
         self.setFixedSize(600, 400)
         self.button_back = self.findChild(QPushButton, "ButtonBack")
+        self.button_back.setStyleSheet(BUTTON_STYLE_SHEET)
         self.button_back.clicked.connect(self.on_click_back)
         self.show()
 
@@ -147,10 +184,13 @@ class CClientGUI(CClientBL, QMainWindow):
 
         self.welcome_label = self.findChild(QLabel, "LabelWelcome")
         self.button_reg = self.findChild(QPushButton, "ButtonRegister")
+        self.button_reg.setStyleSheet(BUTTON_STYLE_SHEET)
         self.button_reg.setFixedSize(200, 50)
         self.button_login = self.findChild(QPushButton, "ButtonLogin")
+        self.button_login.setStyleSheet(BUTTON_STYLE_SHEET)
         self.button_login.setFixedSize(200, 50)
         self.button_back = self.findChild(QPushButton, "ButtonBack")
+        self.button_back.setStyleSheet(BUTTON_STYLE_SHEET)
 
         self.button_reg.clicked.connect(self.on_click_register)
         self.button_login.clicked.connect(self.on_click_login)
@@ -194,12 +234,25 @@ class CClientGUI(CClientBL, QMainWindow):
                 answer = self.receive_data()
                 return answer
 
+            def record():
+                if not self.RECORD:
+                    self.RECORD = True
+                    self.record_wav("recording.wav")
+                    self.send_wav("recording.wav")
+
+            def stop_recording():
+                self.RECORD = False
+
+            def get_condition():
+                return self.RECORD
+
             if any(isinstance(i, CLoginGUI) for i in self.windows):
                 self.windows.clear()
-            main_window = MainWindow(callback_home=back_home,callback_send=send)
+            # main_window = MainWindow(callback_home=back_home,callback_send=send)
+            main_window = RecordWindow(callback_home=back_home,callback_record=record, callback_stop_recording=stop_recording, callback_cond=get_condition)
             self.windows.append(main_window)
             self.hide()
-            main_window.create_main_ui()
+            # main_window.create_main_ui()
 
 
         obj = CLoginGUI(callback_home=back_home, callback_login=callback_login, callback_login_user=login_user)
@@ -250,6 +303,9 @@ class CLoginGUI(QDialog):
         self.button_forgot_pw = self.findChild(QPushButton, "ButtonForgotPW")
         self.button_back = self.findChild(QPushButton, "ButtonBack")
 
+        self.button_login.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.button_forgot_pw.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.button_back.setStyleSheet(BUTTON_STYLE_SHEET)
 
         self.button_login.clicked.connect(self.on_click_login)
         self.button_forgot_pw.clicked.connect(self.on_click_forgot_pw)
@@ -276,6 +332,9 @@ class CLoginGUI(QDialog):
 
         self.button_register = self.findChild(QPushButton, "ButtonRegister")
         self.button_back = self.findChild(QPushButton, "ButtonBack")
+
+        self.button_register.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.button_back.setStyleSheet(BUTTON_STYLE_SHEET)
 
         self.button_register.clicked.connect(self.on_click_register)
         self.button_back.clicked.connect(self.back_to_home)
@@ -342,6 +401,10 @@ class MainWindow(QMainWindow):
 
         self.button_send = self.findChild(QPushButton, "ButtonSend")
         self.button_back = self.findChild(QPushButton, "ButtonBack")
+
+        self.button_send.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.button_back.setStyleSheet(BUTTON_STYLE_SHEET)
+
         self.button_back.clicked.connect(self.on_click_back)
         self.button_send.clicked.connect(self.on_click_send)
         self.show()
@@ -354,6 +417,64 @@ class MainWindow(QMainWindow):
             self.send_entry.setText("Server didn't answer...")
         else:
             self.receive_entry.setText(answer)
+
+    def on_click_back(self):
+        self._callback_home()
+        self.close()
+
+
+class RecordWindow(QMainWindow):
+    def __init__(self, callback_home=None, callback_record=None, callback_stop_recording=None, callback_cond=None):
+        QMainWindow.__init__(self)
+
+        self._callback_home = callback_home
+        self._callback_record = callback_record
+        self._callback_stop_recording = callback_stop_recording
+        self._callback_cond = callback_cond
+
+        self.label_record = None
+
+        self.button_record = None
+        self.button_back = None
+        self.create_main_ui()
+
+    def create_main_ui(self):
+        uic.loadUi("RecordWndGUI.ui", self)
+        self.setFixedSize(500, 500)
+
+        self.label_record = self.findChild(QLabel, "LabelRecord")
+
+        self.button_back = self.findChild(QPushButton, "ButtonBack")
+        self.button_back.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.button_record = self.findChild(QPushButton, "ButtonRecord")
+        self.button_record.setStyleSheet("""
+        QPushButton {
+                    border: 2px solid #00ff00;
+                    border-image: url('microphone_img_final.png');
+                    }
+        QPushButton:hover {
+                    border: 2px solid #00ff00;
+                    border-image: url('microphone_img_final_hover.png');
+                    }
+        QPushButton:pressed {
+                    border: 2px solid #00ff00;
+                    border-image: url('microphone_img_final_pressed.png');
+                    }
+                """)
+        self.button_record.setFixedSize(300, 300)
+        self.button_back.clicked.connect(self.on_click_back)
+        self.button_record.clicked.connect(self.on_click_record)
+        self.show()
+
+    def on_click_record(self):
+        is_recording = self._callback_cond()
+        if not is_recording:
+            self.label_record.setText("Recording...")
+            recording = threading.Thread(target=self._callback_record)
+            recording.start()
+        else:
+            self.label_record.setText("Record")
+            self._callback_stop_recording()
 
     def on_click_back(self):
         self._callback_home()

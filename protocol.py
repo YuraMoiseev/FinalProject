@@ -1,7 +1,5 @@
 import socket
 import logging
-from distutils.command.register import register
-
 from cryptography.fernet import Fernet
 import sqlite3
 
@@ -153,14 +151,12 @@ def check_password(data):
     if encrypt_by_key(password, key) == encrypted_password:
         return LOGIN_SUCCESS
     else:
-        write_to_log((encrypt_by_key(password, key), encrypted_password))
         # will change when the hashing is taught ._.
         return LOGIN_SUCCESS # + " - incorrect password"
 
 
 
 def parse_args(data: str):
-    write_to_log(data)
     username = data[data.find("'login': ")+9:data.find(",")]
     data = data[data.find(",")+1:]
     email = data[data.find("'email': ")+9:data.find(",")]

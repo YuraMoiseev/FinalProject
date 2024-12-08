@@ -1,11 +1,8 @@
-from cryptography.hazmat.primitives.asymmetric.ec import ECDSA
-
 from protocol import *
 import os
 import pyaudio
 import wave
-
-RECORD = True
+from threading import Event
 
 class CClientBL:
 
@@ -14,6 +11,8 @@ class CClientBL:
         self._client_socket = None
         self._host = host
         self._port = port
+
+        self.RECORD = False
 
     def connect(self) -> socket:
         try:
@@ -83,14 +82,15 @@ class CClientBL:
 
     def record_wav(self, file_name: str) -> bool:
         try:
+            write_to_log(f"[CLIENT_BL] {self._client_socket.getsockname()} recording {file_name}...")
             chunk = 1024  # Record in chunks of 1024 samples
             sample_format = pyaudio.paInt16  # 16 bits per sample
-            channels = 2
+            channels = 1
             fs = 44100  # Record at 44100 samples per second
-
+            seconds = 10
             p = pyaudio.PyAudio()  # Create an interface to PortAudio
 
-            write_to_log('[CLIENT_BL] Recording wav file...')
+            write_to_log('[CLIENT_BL] Recording wav file')
 
             stream = p.open(format=sample_format,
                             channels=channels,
@@ -99,13 +99,13 @@ class CClientBL:
                             input=True)
 
             frames = []  # Initialize array to store frames
-
-            # Store data in chunks while recording
-            while True:
+            # Store data in chunks for the given time
+            for i in range(0, int(fs / chunk * seconds)):
                 data = stream.read(chunk)
                 frames.append(data)
-                if not RECORD:
-                    break
+                if not self.RECORD:
+                    write_to_log("[CLIENT_BL] recording stopped unexpectedly")
+                    return False
             # Stop and close the stream
             stream.stop_stream()
             stream.close()
@@ -126,12 +126,6 @@ class CClientBL:
         except Exception as e:
             write_to_log("[CLIENT_BL] Exception on record_wav: {}".format(e))
             return False
-
-
-    def stop_record(self):
-        global RECORD
-        RECORD = False
-
 
     def receive_data(self) -> str:
         try:
@@ -156,8 +150,8 @@ if __name__ == "__main__":
     # client.send_wav("test.wav")
     # client.send_wav("test1.wav")
     # client.send_wav("test.wav")
-    data = {'login': 1234567, 'email': 12345678, 'password': 12345789}
-    client.send_data(f"Register>{data}")
+    client.record_wav("recording.wav")
+    client.send_wav("recording.wav")
     client.receive_data()
     client.disconnect()
 
