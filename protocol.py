@@ -1,29 +1,7 @@
 import socket
-import logging
-from cryptography.fernet import Fernet
 import sqlite3
-
-
-# my ip - 10.81.206.63
-CLIENT_HOST: str = "127.0.0.1"
-SERVER_HOST: str = "0.0.0.0"
-PORT: int = 55555
-BUFFER_SIZE: int = 1024
-HEADER_LEN: int = 4
-FORMAT: str = 'utf-8'
-DISCONNECT_MSG: str = "EXIT"
-
-REG_FAIL: str = "Username is already taken."
-REG_SUCCESS: str = "User registered successfully."
-LOGIN_FAIL: str = "Login failed"
-LOGIN_SUCCESS: str = "Login successful"
-
-REG_MSG: str = "Registration request received"
-SEND_FILE_REQUEST: str = "Song"
-SEND_FILE_APPROVE: str = "Approve"
-SEND_FILE_SUCCESS: str = "Wav file successfully transferred"
-SEND_FILE_FAIL: str = "Count not transfer wav file"
-
+from SecurityProtocol import *
+from ConstantsAndLogging import *
 
 def compare_melody(client_data, db_data):
     # will compare the entered melody to the melodies of some specific song in db
@@ -33,11 +11,6 @@ def compare_melody(client_data, db_data):
 def best_matches(data):
     # will iterate through the database and compare the values, then will return the 10 closest matches
     pass
-
-
-# prepare Log file
-LOG_FILE = 'LOG.log'
-logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 def parse_message(data):
@@ -95,68 +68,58 @@ def create_users_table():
     id INTEGER PRIMARY KEY,
     login TEXT UNIQUE NOT NULL,
     email TEXT UNIQUE NOT NULL,
-    password TEXT NOT NULL,
-    key TEXT NOT NULL
+    hashed_password TEXT NOT NULL,
+    salt TEXT NOT NULL
     );
     ''')
     connection.commit()
     connection.close()
 
-
-def generate_key():
-    return Fernet.generate_key()
-
-
-def encrypt_password_and_get_key(password):
-    key = generate_key()
-    cipher_suite = Fernet(key)
-    return cipher_suite.encrypt(password.encode()), key
-
-
-def encrypt_by_key(password, key):
-    cipher_suite = Fernet(key)
-    return cipher_suite.encrypt(password.encode())
-
-
 def register_client(data):
-    username, email, password = parse_args(str(data))
-    encrypt_pw, key = encrypt_password_and_get_key(password)
-    connection = sqlite3.connect("Users.db")
-    cursor = connection.cursor()
-    cursor.execute("SELECT 1 FROM Users WHERE login = ? OR email = ?", (username, email))
-    if cursor.fetchone() is not None:
+    try:
+        username, email, password = parse_args(str(data))
+        hashed_password, salt = hash_password(password)
+        connection = sqlite3.connect("Users.db")
+        cursor = connection.cursor()
+        cursor.execute("SELECT 1 FROM Users WHERE login = ? OR email = ?", (username, email))
+        if cursor.fetchone() is not None:
+            connection.commit()
+            connection.close()
+            return REG_FAIL_USERNAME
+        cursor.execute(
+            'INSERT INTO Users (login, email, hashed_password, salt) VALUES (?, ?, ?, ?)',
+            (username, email, hashed_password, salt)
+        )
         connection.commit()
         connection.close()
-        return REG_FAIL
-    cursor.execute(
-        'INSERT INTO Users (login, email, password, key) VALUES (?, ?, ?, ?)',
-        (username, email, encrypt_pw, key)
-    )
-    connection.commit()
-    connection.close()
-    return REG_SUCCESS
+        return REG_SUCCESS
+    except Exception as e:
+        write_to_log("[PROTOCOL] - exception on registering a client - {}".format(e))
 
 
 def check_password(data):
-    username_or_email, none, password = parse_args(str(data))
-    connection = sqlite3.connect("Users.db")
-    cursor = connection.cursor()
-    cursor.execute("SELECT password, key FROM Users WHERE login = ? OR email = ?", (username_or_email, username_or_email))
-    result = cursor.fetchone()
-    if result is None:
-        return LOGIN_FAIL + " - no such user was found in database"
-    encrypted_password, key = result
-    connection.commit()
-    connection.close()
-    if encrypt_by_key(password, key) == encrypted_password:
-        return LOGIN_SUCCESS
-    else:
-        # will change when the hashing is taught ._.
-        return LOGIN_SUCCESS # + " - incorrect password"
-
+    try:
+        username_or_email, none, password = parse_args(str(data))
+        connection = sqlite3.connect("Users.db")
+        cursor = connection.cursor()
+        cursor.execute("SELECT hashed_password, salt FROM Users WHERE login = ? OR email = ?", (username_or_email, username_or_email))
+        result = cursor.fetchone()
+        if result is None:
+            return LOGIN_FAIL + " - no such user was found in database"
+        hashed_password, salt = result
+        connection.commit()
+        connection.close()
+        if check_passwords(password, hashed_password, salt):
+            return LOGIN_SUCCESS
+        else:
+            # will change when the hashing is taught ._.
+            return LOGIN_FAIL + " - incorrect password"
+    except Exception as e:
+        write_to_log("[PROTOCOL] - exception on checking password - {}".format(e))
 
 
 def parse_args(data: str):
+    data = data.strip()
     username = data[data.find("'login': ")+9:data.find(",")]
     data = data[data.find(",")+1:]
     email = data[data.find("'email': ")+9:data.find(",")]
@@ -164,11 +127,20 @@ def parse_args(data: str):
     password = data[data.find("'password': ")+12:data.find("}")]
     return username.replace("'", ""), email.replace("'", ""), password.replace("'", "")
 
+def verify_entry_validity(username: str, email: str, password: str):
+    if any(character in username for character in INVALID_CHARACTERS):
+        return False, "Username is invalid - prohibited characters used"
+    if any(character in email for character in INVALID_CHARACTERS):
+        return False, "Email is invalid - prohibited characters used"
+    if "@" not in email:
+        return False, "Email is invalid - @?"
+    if any(character in username for character in INVALID_CHARACTERS):
+        return False, "Password is invalid - prohibited characters used"
+    return True, ""
 
-def write_to_log(msg):
-    logging.info(msg)
-    print(msg)
 
-REQUESTS = {"Hello": "Hello!", "Find": best_matches, SEND_FILE_REQUEST:SEND_FILE_APPROVE,
-            SEND_FILE_SUCCESS:SEND_FILE_SUCCESS, SEND_FILE_FAIL:SEND_FILE_FAIL, DISCONNECT_MSG: "Bye!",
-            "Register": "", "Login": "", "Question": "Answer", "How do I become a coder?": "ChatGPT(no)"}
+
+REQUESTS = {"Hello": "Hello!", "Find": best_matches, SEND_FILE_REQUEST: SEND_FILE_APPROVE,
+                SEND_FILE_SUCCESS: SEND_FILE_SUCCESS, SEND_FILE_FAIL: SEND_FILE_FAIL, DISCONNECT_MSG: "Bye!",
+                "Register": "", "Login": "", "Question": "Answer", "How do I become a coder?": "ChatGPT(no)"}
+

@@ -1,5 +1,4 @@
 import threading
-
 from protocol import *
 from CClientBL import CClientBL
 from PyQt5.QtWidgets import QApplication, QDialog, QPushButton, QMainWindow, QLabel, QLineEdit, QGraphicsOpacityEffect
@@ -207,7 +206,7 @@ class CClientGUI(CClientBL, QMainWindow):
             self.send_data(f"Register>{data}")
             recv = self.receive_data()
             write_to_log(recv)
-            return recv == REG_SUCCESS
+            return recv
 
         def back_home():
             self.show()
@@ -237,11 +236,15 @@ class CClientGUI(CClientBL, QMainWindow):
             def record():
                 if not self.RECORD:
                     self.RECORD = True
+                    self.stop_event.clear()  # Ensure the stop event is cleared before recording
                     self.record_wav("recording.wav")
-                    self.send_wav("recording.wav")
+                    if self.send_wav("recording.wav"):
+                        os.remove("recording.wav")
+
 
             def stop_recording():
                 self.RECORD = False
+                self.stop_event.set()
 
             def get_condition():
                 return self.RECORD
@@ -287,7 +290,7 @@ class CLoginGUI(QDialog):
 
     def create_login_ui(self):
         uic.loadUi("LoginGUI.ui", self)
-        self.setFixedSize(500, 700)
+        self.setFixedSize(700, 700)
 
         self.label_login_fail = self.findChild(QLabel, "LabelLoginFail")
         self.label_login_fail.hide()
@@ -325,6 +328,7 @@ class CLoginGUI(QDialog):
 
         self.label_email = self.findChild(QLabel, "LabelEmail")
         self.email_entry = self.findChild(QLineEdit, "LineEditEmail")
+        self.email_entry.setText("@gmail.com")
 
         self.label_password = self.findChild(QLabel, "LabelPassword")
         self.password_entry = self.findChild(QLineEdit, "LineEditPassword")
@@ -346,15 +350,21 @@ class CLoginGUI(QDialog):
         self.close()
 
     def on_click_register(self):
-        login_text = self.login_entry.text()
-        password_text = self.password_entry.text()
-        email_text = self.email_entry.text()
-        data = {"login": login_text, "email": email_text, "password": password_text}
-        success = self._callback_register(data)
-        if not success:
+        login = self.login_entry.text()
+        password = self.password_entry.text()
+        email = self.email_entry.text()
+        validity = verify_entry_validity(login, email, password)
+        if not validity[0]:
             self.label_reg_fail.show()
+            self.label_reg_fail.setText(validity[1])
         else:
-            self.back_to_home()
+            data = {"login": login, "email": email, "password": password}
+            result = self._callback_register(data)
+            if result != REG_SUCCESS:
+                self.label_reg_fail.show()
+                self.label_reg_fail.setText(result)
+            else:
+                self.back_to_home()
 
     def on_click_login(self):
         login_text = self.login_entry.text()
@@ -424,7 +434,7 @@ class MainWindow(QMainWindow):
 
 
 class RecordWindow(QMainWindow):
-    def __init__(self, callback_home=None, callback_record=None, callback_stop_recording=None, callback_cond=None):
+    def __init__(self, callback_home=None, callback_record=None, callback_stop_recording=None, callback_cond=None, callback_get_res=None):
         QMainWindow.__init__(self)
 
         self._callback_home = callback_home
@@ -469,11 +479,11 @@ class RecordWindow(QMainWindow):
     def on_click_record(self):
         is_recording = self._callback_cond()
         if not is_recording:
-            self.label_record.setText("Recording...")
+            # self.label_record.setText("Recording...")
             recording = threading.Thread(target=self._callback_record)
             recording.start()
         else:
-            self.label_record.setText("Record")
+            # self.label_record.setText("Record")
             self._callback_stop_recording()
 
     def on_click_back(self):

@@ -13,12 +13,13 @@ class CClientBL:
         self._port = port
 
         self.RECORD = False
-
+        self.stop_event = None
     def connect(self) -> socket:
         try:
             self._client_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
             self._client_socket.connect((self._host,self._port))
             write_to_log(f"[CLIENT_BL] {self._client_socket.getsockname()} connected")
+            self.stop_event = Event()
             return self._client_socket
         except Exception as e:
             write_to_log("[CLIENT_BL] Exception on connect: {}".format(e))
@@ -103,7 +104,7 @@ class CClientBL:
             for i in range(0, int(fs / chunk * seconds)):
                 data = stream.read(chunk)
                 frames.append(data)
-                if not self.RECORD:
+                if self.stop_event.is_set():
                     write_to_log("[CLIENT_BL] recording stopped unexpectedly")
                     return False
             # Stop and close the stream
@@ -154,7 +155,3 @@ if __name__ == "__main__":
     client.send_wav("recording.wav")
     client.receive_data()
     client.disconnect()
-
-
-
-
