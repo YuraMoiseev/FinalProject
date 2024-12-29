@@ -1,43 +1,12 @@
 import threading
+import time
+
 from protocol import *
 from CClientBL import CClientBL
-from PyQt5.QtWidgets import QApplication, QDialog, QPushButton, QMainWindow, QLabel, QLineEdit, QGraphicsOpacityEffect
+from PyQt5.QtWidgets import QApplication, QDialog, QPushButton, QMainWindow, QLabel, QLineEdit, QGraphicsOpacityEffect, \
+    QWidget
 from PyQt5.QtCore import QPropertyAnimation, QSequentialAnimationGroup, QParallelAnimationGroup, QPoint
 from PyQt5 import uic
-
-BUTTON_STYLE_SHEET: str = '''QPushButton {
-                    font: 14pt "Arial";
-border-radius: 15px;
-border: 2px solid #00ff00;
-color: #00ff00;
-padding-top: 10px;
-padding-bottom: 10px;
-padding-left: 20px;
-padding-right: 20px; 
-                    }
-QPushButton:hover {
-                    font: 14pt "Arial";
-border-radius: 15px;
-border: 2px solid #00b300;
-color: #00b300;
-padding-top: 10px;
-padding-bottom: 10px;
-padding-left: 20px;
-padding-right: 20px; 
-                    }
-QPushButton:pressed {
-                    font: 14pt "Arial";
-border-radius: 15px;
-border: 2px solid #007000;
-color: #008000;
-padding-top: 10px;
-padding-bottom: 10px;
-padding-left: 20px;
-padding-right: 20px; 
-                    }
-
-'''
-
 
 class CConnectGUI(QMainWindow):
     def __init__(self):
@@ -64,8 +33,10 @@ class CConnectGUI(QMainWindow):
 
         self.host_entry = self.findChild(QLineEdit, "LineEditHost")
         self.host_entry.setText(str(CLIENT_HOST))
+        self.host_entry.setStyleSheet(ENTRY_STYLE_SHEET)
         self.port_entry = self.findChild(QLineEdit, "LineEditPort")
         self.port_entry.setText(str(PORT))
+        self.port_entry.setStyleSheet(ENTRY_STYLE_SHEET)
 
         self.connect_button = self.findChild(QPushButton, "ButtonConnect")
         self.connect_button.setStyleSheet(BUTTON_STYLE_SHEET)
@@ -73,18 +44,16 @@ class CConnectGUI(QMainWindow):
         self.show()
 
     def on_click_connect(self):
-        def back_home():
-            self.show()
-        self.client = CClientGUI(host=self.host_entry.text(), port=int(self.port_entry.text()), callback_back=back_home)
+        self.client = CClientGUI(host=self.host_entry.text(), port=int(self.port_entry.text()), parent_wnd=self)
         self.hide()
 
 
 class CClientGUI(CClientBL, QMainWindow):
-    def __init__(self, host, port, callback_back=None):
+    def __init__(self, host, port, parent_wnd=None):
         CClientBL.__init__(self, host, port)
         QMainWindow.__init__(self)
 
-        self.callback_home = callback_back
+        self._parent_wnd = parent_wnd
 
         self.welcome_label = None
         self.button_reg = None
@@ -112,7 +81,7 @@ class CClientGUI(CClientBL, QMainWindow):
         self.show()
 
     def on_click_back(self):
-        self.callback_home()
+        self._parent_wnd.show()
         self.close()
 
     def welcome_label_animation(self):
@@ -201,71 +170,21 @@ class CClientGUI(CClientBL, QMainWindow):
 
     def on_click_register(self):
 
-        def callback_register(data):
-            write_to_log(data)
-            self.send_data(f"Register>{data}")
-            recv = self.receive_data()
-            write_to_log(recv)
-            return recv
-
-        def back_home():
-            self.show()
-
-        obj = CLoginGUI(callback_home=back_home, callback_register=callback_register)
+        obj = CLoginGUI(parent_wnd=self)
         self.windows.append(obj)
         self.hide()
         obj.create_register_ui()
 
     def on_click_login(self):
 
-        def callback_login(data):
-            self.send_data(f"Login>{data}")
-            recv = self.receive_data()
-            write_to_log(recv)
-            return recv == LOGIN_SUCCESS, recv
-
-        def back_home():
-            self.show()
-
-        def login_user():
-            def send(data):
-                self.send_data(data)
-                answer = self.receive_data()
-                return answer
-
-            def record():
-                if not self.RECORD:
-                    self.RECORD = True
-                    self.stop_event.clear()  # Ensure the stop event is cleared before recording
-                    self.record_wav("recording.wav")
-                    if self.send_wav("recording.wav"):
-                        os.remove("recording.wav")
-
-
-            def stop_recording():
-                self.RECORD = False
-                self.stop_event.set()
-
-            def get_condition():
-                return self.RECORD
-
-            if any(isinstance(i, CLoginGUI) for i in self.windows):
-                self.windows.clear()
-            # main_window = MainWindow(callback_home=back_home,callback_send=send)
-            main_window = RecordWindow(callback_home=back_home,callback_record=record, callback_stop_recording=stop_recording, callback_cond=get_condition)
-            self.windows.append(main_window)
-            self.hide()
-            # main_window.create_main_ui()
-
-
-        obj = CLoginGUI(callback_home=back_home, callback_login=callback_login, callback_login_user=login_user)
+        obj = CLoginGUI(parent_wnd=self)
         self.windows.append(obj)
         self.hide()
         obj.create_login_ui()
 
 
 class CLoginGUI(QDialog):
-    def __init__(self, callback_home=None, callback_register=None, callback_login=None, callback_login_user=None):
+    def __init__(self, parent_wnd=None):
         QDialog.__init__(self)
 
         self.label_login = None
@@ -283,10 +202,7 @@ class CLoginGUI(QDialog):
         self.button_login = None
         self.button_forgot_pw = None
 
-        self._callback_register = callback_register
-        self._callback_login = callback_login
-        self._callback_home = callback_home
-        self._callback_login_user = callback_login_user
+        self._parent_wnd = parent_wnd
 
     def create_login_ui(self):
         uic.loadUi("LoginGUI.ui", self)
@@ -297,9 +213,11 @@ class CLoginGUI(QDialog):
 
         self.label_login = self.findChild(QLabel, "LabelLogin")
         self.login_entry = self.findChild(QLineEdit, "LineEditLogin")
+        self.login_entry.setStyleSheet(ENTRY_STYLE_SHEET)
 
         self.label_password = self.findChild(QLabel, "LabelPassword")
         self.password_entry = self.findChild(QLineEdit, "LineEditPassword")
+        self.password_entry.setStyleSheet(ENTRY_STYLE_SHEET)
         self.password_entry.setEchoMode(QLineEdit.Password)
 
         self.button_login = self.findChild(QPushButton, "ButtonLogin")
@@ -325,13 +243,16 @@ class CLoginGUI(QDialog):
 
         self.label_login = self.findChild(QLabel, "LabelLogin")
         self.login_entry = self.findChild(QLineEdit, "LineEditLogin")
+        self.login_entry.setStyleSheet(ENTRY_STYLE_SHEET)
 
         self.label_email = self.findChild(QLabel, "LabelEmail")
         self.email_entry = self.findChild(QLineEdit, "LineEditEmail")
+        self.email_entry.setStyleSheet(ENTRY_STYLE_SHEET)
         self.email_entry.setText("@gmail.com")
 
         self.label_password = self.findChild(QLabel, "LabelPassword")
         self.password_entry = self.findChild(QLineEdit, "LineEditPassword")
+        self.password_entry.setStyleSheet(ENTRY_STYLE_SHEET)
         self.password_entry.setEchoMode(QLineEdit.Password)
 
         self.button_register = self.findChild(QPushButton, "ButtonRegister")
@@ -346,7 +267,7 @@ class CLoginGUI(QDialog):
         self.show()
 
     def back_to_home(self):
-        self._callback_home()
+        self._parent_wnd.show()
         self.close()
 
     def on_click_register(self):
@@ -359,7 +280,8 @@ class CLoginGUI(QDialog):
             self.label_reg_fail.setText(validity[1])
         else:
             data = {"login": login, "email": email, "password": password}
-            result = self._callback_register(data)
+            self._parent_wnd.send_data(f"Register>{data}")
+            result = self._parent_wnd.receive_data()
             if result != REG_SUCCESS:
                 self.label_reg_fail.show()
                 self.label_reg_fail.setText(result)
@@ -370,24 +292,33 @@ class CLoginGUI(QDialog):
         login_text = self.login_entry.text()
         password_text = self.password_entry.text()
         data = {"login": login_text, "password": password_text}
-        success = self._callback_login(data)
-        if not success[0]:
-            self.label_login_fail.setText(success[1])
+        self._parent_wnd.send_data(f"Login>{data}")
+        success = self._parent_wnd.receive_data()
+        if success != LOGIN_SUCCESS:
+            self.label_login_fail.setText(success)
             self.label_login_fail.show()
         else:
-            self._callback_login_user()
+            self._parent_wnd.windows.clear()
+            # main_window = MainWindow(callback_home=back_home,callback_send=send)
+            main_window = RecordWindow(parent_wnd=self._parent_wnd)
+            self._parent_wnd.windows.append(main_window)
+            self.hide()
+            # main_window.create_main_ui()
 
 
     def on_click_forgot_pw(self):
         write_to_log("Pomnit' Nada")
 
 
+# class ForgotPassword(QDialog):
+#     def __init__(self, parent=None):
+
+
 class MainWindow(QMainWindow):
-    def __init__(self, callback_home=None, callback_send=None):
+    def __init__(self, parent_wnd):
         QMainWindow.__init__(self)
 
-        self._callback_home = callback_home
-        self._callback_send = callback_send
+        self._parent_wnd = parent_wnd
 
         self.label_entry = None
         self.label_receive = None
@@ -422,25 +353,23 @@ class MainWindow(QMainWindow):
 
     def on_click_send(self):
         data = self.send_entry.text()
-        answer = self._callback_send(data)
+        self._parent_wnd.send_data(data)
+        answer = self._parent_wnd.receive_data()
         if not answer:
             self.send_entry.setText("Server didn't answer...")
         else:
             self.receive_entry.setText(answer)
 
     def on_click_back(self):
-        self._callback_home()
+        self._parent_wnd.show()
         self.close()
 
 
 class RecordWindow(QMainWindow):
-    def __init__(self, callback_home=None, callback_record=None, callback_stop_recording=None, callback_cond=None, callback_get_res=None):
+    def __init__(self, parent_wnd):
         QMainWindow.__init__(self)
 
-        self._callback_home = callback_home
-        self._callback_record = callback_record
-        self._callback_stop_recording = callback_stop_recording
-        self._callback_cond = callback_cond
+        self._parent_wnd = parent_wnd
 
         self.label_record = None
 
@@ -476,18 +405,25 @@ class RecordWindow(QMainWindow):
         self.button_record.clicked.connect(self.on_click_record)
         self.show()
 
+    def _record(self):
+        self._parent_wnd.record_wav("recording.wav")
+        self._parent_wnd.send_wav("recording.wav")
+        self.label_record.setText("Recording done!")
+        time.sleep(3)
+        self.label_record.setText("Record")
+
     def on_click_record(self):
-        is_recording = self._callback_cond()
-        if not is_recording:
-            # self.label_record.setText("Recording...")
-            recording = threading.Thread(target=self._callback_record)
+        if not self._parent_wnd.is_recording:
+            self.label_record.setText("Recording...")
+            self._parent_wnd.cond()
+            recording = threading.Thread(target=self._record)
             recording.start()
         else:
-            # self.label_record.setText("Record")
-            self._callback_stop_recording()
+            self.label_record.setText("Record")
+            self._parent_wnd.cond()
 
     def on_click_back(self):
-        self._callback_home()
+        self._parent_wnd.show()
         self.close()
 
 

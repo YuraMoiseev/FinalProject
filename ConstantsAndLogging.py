@@ -21,7 +21,45 @@ SEND_FILE_APPROVE: str = "Approve"
 SEND_FILE_SUCCESS: str = "Wav file successfully transferred"
 SEND_FILE_FAIL: str = "Could not transfer wav file"
 
+DELIMITER = b''
 
+BUTTON_STYLE_SHEET: str = '''QPushButton {
+                    font: 14pt "Arial";
+border-radius: 15px;
+border: 2px solid #00ff00;
+color: #00ff00;
+padding-top: 10px;
+padding-bottom: 10px;
+padding-left: 20px;
+padding-right: 20px; 
+                    }
+QPushButton:hover {
+                    font: 14pt "Arial";
+border-radius: 15px;
+border: 2px solid #00b300;
+color: #00b300;
+padding-top: 10px;
+padding-bottom: 10px;
+padding-left: 20px;
+padding-right: 20px; 
+                    }
+QPushButton:pressed {
+                    font: 14pt "Arial";
+border-radius: 15px;
+border: 2px solid #007000;
+color: #008000;
+padding-top: 10px;
+padding-bottom: 10px;
+padding-left: 20px;
+padding-right: 20px; 
+                    }
+
+'''
+
+ENTRY_STYLE_SHEET: str = '''font: 14pt "Arial";
+border-radius: 5px;
+border: 2px solid #00ff00;
+color: #00ff00;'''
 
 # prepare Log file
 LOG_FILE = 'LOG.log'

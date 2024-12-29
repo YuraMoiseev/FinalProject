@@ -1,6 +1,8 @@
 from mido import *
 import editdistance
 
+import SecurityProtocol
+
 # currently just experimenting with comparing .mid files
 
 
@@ -144,6 +146,7 @@ def ListDifference(arr1: list, arr2: list):
     if len(arr1) != len(arr2):
         raise Exception(f"Invalid list length - {len(arr1)} {len(arr2)}")
     return sum([diff(arr1[i], arr2[i]) for i in range(len(arr1))])
+
 
 # Min heap of melodies by difference
 

@@ -1,15 +1,13 @@
-import os
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import rsa, padding
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives.asymmetric import rsa,padding
+from cryptography.hazmat.primitives import serialization,hashes
+from cryptography.hazmat.primitives.serialization import load_pem_public_key
 from ConstantsAndLogging import FORMAT, write_to_log
-
+from argon2 import PasswordHasher
 
 def to_bytes(data):
     if not isinstance(data, bytes):
         data = data.encode(FORMAT)
     return data
-
 
 def create_private_key(public_exponent=65537, key_size=2048):
     return rsa.generate_private_key(public_exponent=public_exponent, key_size=key_size)
@@ -66,10 +64,10 @@ def encrypt_msg(public_key, data):
 
 def decrypt_msg(private_key, encrypted_data):
     try:
-        encrypted_data = to_bytes(encrypted_data)
+        encrypt_data = to_bytes(encrypted_data)
         # Decrypt the message
         decrypted_data = private_key.decrypt(
-            encrypted_data,
+            encrypt_data,
             padding.OAEP(
                 mgf=padding.MGF1(algorithm=hashes.SHA256()),
                 algorithm=hashes.SHA256(),
@@ -79,56 +77,32 @@ def decrypt_msg(private_key, encrypted_data):
         return decrypted_data
     except Exception as e:
         write_to_log("[SECURITY_PROTOCOL] message decryption failed with exception {}".format(e))
+        return "Error"
 
-def hash_password(password, key_length=32, salt=None, salt_size=16, iterations=100_000):
-    """
-        Hashes a password using PBKDF2HMAC.
+def load_pem(public_key):
+    public_pem = public_key.public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo
+    )
+    return public_pem
 
-        :param password: The password to hash.
-        :param key_length: Desired length of the derived key.
-        :param salt: Optional; provide a salt if you want to reuse one.
-        :param salt_size: Size of the salt in bytes if generating a new one.
-        :param iterations: Number of iterations for the hashing algorithm.
-        :return: A tuple of (hashed_password, salt) or None if hashing fails.
-        """
+def load_key(pem):
+    key = load_pem_public_key(pem)
+    return key
+
+def hash_password(password, time_cost=3, memory_cost=131072, parallelism=4):
     try:
-        password = to_bytes(password)
-        if not salt:
-            salt = os.urandom(salt_size)
-        kdf = PBKDF2HMAC(
-        algorithm=hashes.SHA256(),
-        length=key_length,
-        salt=salt,
-        iterations=iterations,
-        )
-        hashed_password = kdf.derive(password)
-        return hashed_password, salt
+        ph = PasswordHasher(time_cost=time_cost, memory_cost=memory_cost, parallelism=parallelism)
+        return ph.hash(password)
     except Exception as e:
-        write_to_log("[SECURITY_PROTOCOL] password hashing failed with exception {}".format(e))
+        write_to_log("[SECURITY_PROTOCOL] password hashing failed with exception - {}".format(e))
         return None
 
-def check_passwords(password, hashed_password, salt, key_length=32, iterations=100_000):
-    """
-       Verifies if a provided password matches the hashed password.
-
-       :param password: The password to check.
-       :param hashed_password: The stored hashed password.
-       :param salt: The salt used during the hashing process.
-       :param key_length: Length of the derived key.
-       :param iterations: Number of iterations for the hashing algorithm.
-       :return: True if the passwords match, False otherwise.
-       """
+def verify_password(hashed_password, password):
     try:
-        password = to_bytes(password)
-        hashed_password = to_bytes(hashed_password)
-        kdf = PBKDF2HMAC(
-            algorithm=hashes.SHA256(),
-            length=key_length,
-            salt=salt,
-            iterations=iterations,
-        )
-        kdf.verify(password, hashed_password)
+        ph = PasswordHasher()
+        ph.verify(hashed_password, password)
         return True
     except Exception as e:
-        write_to_log("[SECURITY_PROTOCOL] password check failed with exception {}".format(e))
+        write_to_log("[SECURITY_PROTOCOL] password verification failed with exception - {}".format(e))
         return False

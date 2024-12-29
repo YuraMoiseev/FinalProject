@@ -14,49 +14,86 @@ def best_matches(data):
 
 
 def parse_message(data):
+    data = to_bytes(data)
+    data = data.decode(FORMAT)
     if ">" in data:
         return data[:data.index(">")], data[data.index(">")+1:]
     return data, None
 
 
 def check_cmd(data):
-    return parse_message(data)[0] in REQUESTS
+    cmd, args = parse_message(data)
+    if type(cmd) == bytes:
+        cmd = cmd.decode(FORMAT)
+    return cmd in REQUESTS
 
 
-def create_request_msg(data) -> str:
-    """Create a valid protocol message, will be sent by client, with length field"""
+def create_request_msg(public_key, data) -> str:
+    """Create a valid protocol message and encrypt it using RSA, will be sent by client, with length field"""
     request = ''
     if check_cmd(data):
-        request += f"{len(data):0{HEADER_LEN}d}{data}"
+        request += f"{data}"
     else:
-        request = f"{len('Non-supported cmd'):0{HEADER_LEN}d}Non-supported cmd"
-    return request
+        request = f"Non-supported cmd"
+    request = encrypt_msg(public_key, request)
+    return f"{len(str(request)):0{HEADER_LEN}d}".encode(FORMAT) + DELIMITER  + request
 
 
-def create_response_msg(data) -> str:
-    """Create a valid protocol message, will be sent by server, with length field"""
-    if check_cmd(data) and parse_message(data)[0]!="Register" and parse_message(data)[0]!="Login":
-        response = REQUESTS[data]
-    elif parse_message(data)[0] == "Register":
-        response = register_client(parse_message(data)[1])
-    elif parse_message(data)[0] == "Login":
-        response = check_password(parse_message(data)[1])
+def create_response_msg(public_key, data) -> str:
+    """Encrypt and make the given protocol response valid, will be sent by server, with length field"""
+    response = encrypt_msg(public_key, data)
+    return f"{len(str(response)):0{HEADER_LEN}d}".encode(FORMAT) + DELIMITER  + response
+
+
+def create_response(data):
+    """Create and a valid protocol message, will be sent by server, with length field"""
+    cmd, args = parse_message(data)
+    if type(cmd) == bytes:
+        cmd = cmd.decode(FORMAT)
+    if type(args) == bytes:
+        args = args.decode(FORMAT)
+    if check_cmd(data) and cmd !="Register" and cmd !="Login":
+        response = REQUESTS[cmd]
+    elif cmd == "Register":
+        response = register_client(args)
+    elif cmd == "Login":
+        response = check_password(args)
     else:
         response = "Non-supported cmd"
-    return f"{len(response):0{HEADER_LEN}d}{response}"
+    return response
 
 
-def receive_msg(my_socket: socket) -> (bool, str):
-    """Extract message from protocol, without the length field
+
+def receive_msg(my_socket: socket, private_key) -> (bool, str):
+    """Decrypt and extract message from protocol, without the length field
        If length field does not include a number, returns False, "Error" """
+    try:
+        str_header = my_socket.recv(HEADER_LEN).decode(FORMAT)
+        length = int(str_header)
+        if length > 0:
+            buf_encrypted = my_socket.recv(length)
+            buf = decrypt_msg(private_key, buf_encrypted)
+        else:
+            return False, "Error"
+
+        return True, buf
+    except Exception as e:
+        write_to_log("[PROTOCOL] receive msg failed with exception {}".format(e))
+
+
+def receive_key(my_socket:socket):
     str_header = my_socket.recv(HEADER_LEN).decode(FORMAT)
     length = int(str_header)
     if length > 0:
-        buf = my_socket.recv(length).decode(FORMAT)
-    else:
-        return False, "Error"
+        pem = my_socket.recv(length).decode(FORMAT).encode(FORMAT)
+        key = load_pem_public_key(pem)
+        return key
 
-    return True, buf
+# def receive_key(my_socket:socket):
+#     pem = my_socket.recv(BUFFER_SIZE)
+#     write_to_log(pem)
+#     key = load_pem_public_key(pem)
+#     return key
 
 
 def create_users_table():
@@ -68,8 +105,7 @@ def create_users_table():
     id INTEGER PRIMARY KEY,
     login TEXT UNIQUE NOT NULL,
     email TEXT UNIQUE NOT NULL,
-    hashed_password TEXT NOT NULL,
-    salt TEXT NOT NULL
+    hashed_password TEXT NOT NULL
     );
     ''')
     connection.commit()
@@ -78,7 +114,7 @@ def create_users_table():
 def register_client(data):
     try:
         username, email, password = parse_args(str(data))
-        hashed_password, salt = hash_password(password)
+        hashed_password = hash_password(password)
         connection = sqlite3.connect("Users.db")
         cursor = connection.cursor()
         cursor.execute("SELECT 1 FROM Users WHERE login = ? OR email = ?", (username, email))
@@ -87,8 +123,8 @@ def register_client(data):
             connection.close()
             return REG_FAIL_USERNAME
         cursor.execute(
-            'INSERT INTO Users (login, email, hashed_password, salt) VALUES (?, ?, ?, ?)',
-            (username, email, hashed_password, salt)
+            'INSERT INTO Users (login, email, hashed_password) VALUES (?, ?, ?)',
+            (username, email, hashed_password)
         )
         connection.commit()
         connection.close()
@@ -102,24 +138,22 @@ def check_password(data):
         username_or_email, none, password = parse_args(str(data))
         connection = sqlite3.connect("Users.db")
         cursor = connection.cursor()
-        cursor.execute("SELECT hashed_password, salt FROM Users WHERE login = ? OR email = ?", (username_or_email, username_or_email))
+        cursor.execute("SELECT hashed_password FROM Users WHERE login = ? OR email = ?", (username_or_email, username_or_email))
         result = cursor.fetchone()
         if result is None:
             return LOGIN_FAIL + " - no such user was found in database"
-        hashed_password, salt = result
+        hashed_password = result[0]
         connection.commit()
         connection.close()
-        if check_passwords(password, hashed_password, salt):
+        if verify_password(hashed_password, password):
             return LOGIN_SUCCESS
         else:
-            # will change when the hashing is taught ._.
             return LOGIN_FAIL + " - incorrect password"
     except Exception as e:
         write_to_log("[PROTOCOL] - exception on checking password - {}".format(e))
 
 
 def parse_args(data: str):
-    data = data.strip()
     username = data[data.find("'login': ")+9:data.find(",")]
     data = data[data.find(",")+1:]
     email = data[data.find("'email': ")+9:data.find(",")]
