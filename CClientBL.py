@@ -16,6 +16,7 @@ class CClientBL:
         self._private_key = create_private_key()
         self.serv_public_key = None
         self.is_recording = False
+        self.selected_audio_device = 0
 
     def connect(self) -> socket:
         try:
@@ -60,6 +61,23 @@ class CClientBL:
         self.is_recording = not self.is_recording
         write_to_log(self.is_recording)
 
+    def get_audio_devices(self):
+        p = pyaudio.PyAudio()
+        devices = {}
+        # List all available audio devices
+        for i in range(p.get_device_count()):
+            info = p.get_device_info_by_index(i)
+            devices[info['name']] = i
+        p.terminate()
+        return devices
+
+    def select_audio_device(self, name: str):
+        try:
+            self.selected_audio_device = self.get_audio_devices()[name]
+            write_to_log(f"[CLIENT_BL] successfully changed audio device to {self.selected_audio_device} ({name})")
+        except Exception as e:
+            write_to_log(f"Exception on selection audio device - {e}")
+
     def send_wav(self, file_name: str) -> bool:
         if not os.path.exists(file_name):
             write_to_log(f"[CLIENT_BL] - file does not exist: {file_name}")
@@ -103,7 +121,7 @@ class CClientBL:
             sample_format = pyaudio.paInt16  # 16 bits per sample
             channels = 1
             fs = 44100  # Record at 44100 samples per second
-            seconds = 3
+            seconds = 3 # Record for 3 seconds
             p = pyaudio.PyAudio()  # Create an interface to PortAudio
 
             write_to_log('[CLIENT_BL] Recording wav file')
@@ -112,6 +130,7 @@ class CClientBL:
                             channels=channels,
                             rate=fs,
                             frames_per_buffer=chunk,
+                            input_device_index=self.selected_audio_device,
                             input=True)
 
             frames = []  # Initialize array to store frames

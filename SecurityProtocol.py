@@ -1,8 +1,8 @@
 from cryptography.hazmat.primitives.asymmetric import rsa,padding
 from cryptography.hazmat.primitives import serialization,hashes
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
-from ConstantsAndLogging import FORMAT, write_to_log
 from argon2 import PasswordHasher
+from ConstantsAndLogging import FORMAT, write_to_log
 
 def to_bytes(data):
     if not isinstance(data, bytes):

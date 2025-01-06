@@ -1,10 +1,10 @@
 import threading
 import time
-
+import os
 from protocol import *
 from CClientBL import CClientBL
 from PyQt5.QtWidgets import QApplication, QDialog, QPushButton, QMainWindow, QLabel, QLineEdit, QGraphicsOpacityEffect, \
-    QWidget
+    QWidget, QComboBox
 from PyQt5.QtCore import QPropertyAnimation, QSequentialAnimationGroup, QParallelAnimationGroup, QPoint
 from PyQt5 import uic
 
@@ -375,11 +375,12 @@ class RecordWindow(QMainWindow):
 
         self.button_record = None
         self.button_back = None
+        self.combo_box_devices = None
         self.create_main_ui()
 
     def create_main_ui(self):
         uic.loadUi("RecordWndGUI.ui", self)
-        self.setFixedSize(500, 500)
+        self.setFixedSize(500, 650)
 
         self.label_record = self.findChild(QLabel, "LabelRecord")
 
@@ -401,16 +402,35 @@ class RecordWindow(QMainWindow):
                     }
                 """)
         self.button_record.setFixedSize(300, 300)
+        self.combo_box_devices = self.findChild(QComboBox, "ComboBoxAudioDevices")
+        self.setup_combo_box()
         self.button_back.clicked.connect(self.on_click_back)
         self.button_record.clicked.connect(self.on_click_record)
         self.show()
 
+    def setup_combo_box(self):
+        devices = self._parent_wnd.get_audio_devices()
+        for i in devices:
+            self.combo_box_devices.addItem(i)
+        self.combo_box_devices.currentIndexChanged.connect(self.selection_change)
+
+    def selection_change(self):
+        self._parent_wnd.select_audio_device(self.combo_box_devices.currentText())
+
     def _record(self):
         self._parent_wnd.record_wav("recording.wav")
         self._parent_wnd.send_wav("recording.wav")
+        try:
+            os.remove("recording.wav")
+            write_to_log(f"File 'recording.wav' has been deleted successfully.")
+        except Exception as e:
+            write_to_log(f"An error occurred: {e}")
+        if not self._parent_wnd.is_recording:
+            return
         self.label_record.setText("Recording done!")
-        time.sleep(3)
-        self.label_record.setText("Record")
+        self._parent_wnd.cond()
+        # time.sleep(3)
+        # self.label_record.setText("Record")
 
     def on_click_record(self):
         if not self._parent_wnd.is_recording:
@@ -425,6 +445,9 @@ class RecordWindow(QMainWindow):
     def on_click_back(self):
         self._parent_wnd.show()
         self.close()
+
+    def select_audio_device(self):
+        pass
 
 
 if __name__ == "__main__":
