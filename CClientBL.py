@@ -16,6 +16,7 @@ class CClientBL:
         self._private_key = create_private_key()
         self.serv_public_key = None
         self.is_recording = False
+        self._audio_devices = None
         self.selected_audio_device = 0
 
     def connect(self) -> socket:
@@ -67,7 +68,8 @@ class CClientBL:
         # List all available audio devices
         for i in range(p.get_device_count()):
             info = p.get_device_info_by_index(i)
-            devices[info['name']] = i
+            if info['maxInputChannels'] > 0:
+                devices[info['name']] = i
         p.terminate()
         return devices
 
@@ -121,7 +123,7 @@ class CClientBL:
             sample_format = pyaudio.paInt32  # 32 bits per sample
             channels = 1
             fs = 44100  # Record at 44100 samples per second
-            seconds = 3 # Record for 3 seconds
+            seconds = 10  # Record for 3 seconds
             p = pyaudio.PyAudio()  # Create an interface to PortAudio
 
             write_to_log('[CLIENT_BL] Recording wav file')

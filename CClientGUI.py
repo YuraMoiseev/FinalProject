@@ -25,7 +25,7 @@ class CConnectGUI(QMainWindow):
         self.client = None
 
     def create_connect_wnd(self):
-        uic.loadUi('ConnectWindowGUI.ui', self)
+        uic.loadUi('GUI/UIs/ConnectWindowGUI.ui', self)
         self.setFixedSize(400, 400)
         self.title_label = self.findChild(QLabel, "LabelTitle")
         self.host_label = self.findChild(QLabel, "LabelHost")
@@ -73,7 +73,7 @@ class CClientGUI(CClientBL, QMainWindow):
 
 
     def create_error_wnd(self):
-        uic.loadUi('ErrorWindowGUI.ui', self)
+        uic.loadUi('GUI/UIs/ErrorWindowGUI.ui', self)
         self.setFixedSize(600, 400)
         self.button_back = self.findChild(QPushButton, "ButtonBack")
         self.button_back.setStyleSheet(BUTTON_STYLE_SHEET)
@@ -147,7 +147,7 @@ class CClientGUI(CClientBL, QMainWindow):
         self.button_login.show()
 
     def create_homepage_ui(self):
-        uic.loadUi("HomePageGUI.ui", self)
+        uic.loadUi("GUI/UIs/HomePageGUI.ui", self)
         self.setFixedSize(600, 475)
 
         self.welcome_label = self.findChild(QLabel, "LabelWelcome")
@@ -205,7 +205,7 @@ class CLoginGUI(QDialog):
         self._parent_wnd = parent_wnd
 
     def create_login_ui(self):
-        uic.loadUi("LoginGUI.ui", self)
+        uic.loadUi("GUI/UIs/LoginGUI.ui", self)
         self.setFixedSize(700, 700)
 
         self.label_login_fail = self.findChild(QLabel, "LabelLoginFail")
@@ -235,7 +235,7 @@ class CLoginGUI(QDialog):
         self.show()
 
     def create_register_ui(self):
-        uic.loadUi("RegisterWindowGUI.ui", self)
+        uic.loadUi("GUI/UIs/RegisterWindowGUI.ui", self)
         self.setFixedSize(700, 700)
 
         self.label_reg_fail = self.findChild(QLabel, "LabelRegFail")
@@ -330,7 +330,7 @@ class MainWindow(QMainWindow):
         self.button_back = None
 
     def create_main_ui(self):
-        uic.loadUi("MainWindowGUI.ui", self)
+        uic.loadUi("GUI/UIs/MainWindowGUI.ui", self)
         self.setFixedSize(500, 700)
 
         self.label_entry = self.findChild(QLabel, "LabelSend")
@@ -379,7 +379,7 @@ class RecordWindow(QMainWindow):
         self.create_main_ui()
 
     def create_main_ui(self):
-        uic.loadUi("RecordWndGUI.ui", self)
+        uic.loadUi("GUI/UIs/RecordWndGUI.ui", self)
         self.setFixedSize(500, 650)
 
         self.label_record = self.findChild(QLabel, "LabelRecord")
@@ -390,15 +390,15 @@ class RecordWindow(QMainWindow):
         self.button_record.setStyleSheet("""
         QPushButton {
                     border: 2px solid #00ff00;
-                    border-image: url('microphone_img_final.png');
+                    border-image: url('GUI/Images/microphone_img_final.png');
                     }
         QPushButton:hover {
                     border: 2px solid #00ff00;
-                    border-image: url('microphone_img_final_hover.png');
+                    border-image: url('GUI/Images/microphone_img_final_hover.png');
                     }
         QPushButton:pressed {
                     border: 2px solid #00ff00;
-                    border-image: url('microphone_img_final_pressed.png');
+                    border-image: url('GUI/Images/microphone_img_final_pressed.png');
                     }
                 """)
         self.button_record.setFixedSize(300, 300)

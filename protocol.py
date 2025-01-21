@@ -102,14 +102,66 @@ def create_users_table():
     cursor = connection.cursor()
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS Users (
-    id INTEGER PRIMARY KEY,
-    login TEXT UNIQUE NOT NULL,
-    email TEXT UNIQUE NOT NULL,
-    hashed_password TEXT NOT NULL
+        id INTEGER PRIMARY KEY,
+        login TEXT UNIQUE NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        hashed_password TEXT NOT NULL
     );
     ''')
     connection.commit()
     connection.close()
+
+
+def create_songs_table():
+    # Create songs table in DB
+    connection = sqlite3.connect("Users.db")
+    cursor = connection.cursor()
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS Songs (
+        id INTEGER PRIMARY KEY,
+        melodies BLOB,
+        song_name TEXT NOT NULL,
+        added_by INTEGER NOT NULL,
+        FOREIGN KEY (added_by) REFERENCES Users (id) ON DELETE CASCADE ON UPDATE CASCADE
+    );
+    ''')
+    connection.commit()
+    connection.close()
+
+
+def create_requests_table():
+    # Create requests table in DB
+    connection = sqlite3.connect("Requests.db")
+    cursor = connection.cursor()
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS Requests (
+        id INTEGER PRIMARY KEY,
+        song_name TEXT NOT NULL,
+        description TEXT
+        requester_id INTEGER NOT NULL,
+        FOREIGN KEY (requester_id) REFERENCES Users (id) ON DELETE CASCADE ON UPDATE CASCADE
+    );
+    ''')
+    connection.commit()
+    connection.close()
+
+
+def create_my_requests_table():
+    # Create my_requests table in DB
+    connection = sqlite3.connect("My_Requests.db")
+    cursor = connection.cursor()
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS My_Requests (
+        id INTEGER PRIMARY KEY,
+        request_id INTEGER NOT NULL,
+        requester_id INTEGER NOT NULL,
+        FOREIGN KEY (request_id) REFERENCES Requests (id) ON DELETE CASCADE ON UPDATE CASCADE,
+        FOREIGN KEY (requester_id) REFERENCES Users (id) ON DELETE CASCADE ON UPDATE CASCADE
+    );
+    ''')
+    connection.commit()
+    connection.close()
+
 
 def register_client(data):
     try:
@@ -151,6 +203,40 @@ def check_password(data):
             return LOGIN_FAIL + " - incorrect password"
     except Exception as e:
         write_to_log("[PROTOCOL] - exception on checking password - {}".format(e))
+
+
+def add_song(song_name, midi_file_path, added_by):
+    # Connect to the database
+    connection = sqlite3.connect("Users.db")
+    cursor = connection.cursor()
+
+    # Read the file in binary mode
+    with open(midi_file_path, 'rb') as file:
+        blob_data = file.read()
+
+    # Insert the data into the Songs table
+    cursor.execute('''
+        INSERT INTO Songs (melodies, song_name, added_by)
+        VALUES (?, ?, ?);
+        ''', (blob_data, song_name, added_by))
+
+    connection.commit()
+    connection.close()
+
+
+def add_request(song_name, description, added_by):
+    # Connect to the database
+    connection = sqlite3.connect("Users.db")
+    cursor = connection.cursor()
+
+    # Insert the data into the Songs table
+    cursor.execute('''
+        INSERT INTO Requests (song_name, description, added_by)
+        VALUES (?, ?, ?);
+        ''', (song_name, description, added_by))
+
+    connection.commit()
+    connection.close()
 
 
 def parse_args(data: str):
