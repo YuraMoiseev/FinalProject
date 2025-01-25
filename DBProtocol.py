@@ -3,7 +3,7 @@ from ConstantsAndLogging import *
 from SecurityProtocol import hash_password, verify_password
 
 
-def create_users_table():
+def create_db_tables():
     # create users table in DB
     connection = sqlite3.connect(DB_FILE_NAME)
     cursor = connection.cursor()

@@ -61,6 +61,21 @@ border-radius: 5px;
 border: 2px solid #00ff00;
 color: #00ff00;'''
 
+DROP_FILE_STYLE_SHEET: str = '''
+QLabel
+    {
+    font: 14pt "Arial";
+    border-radius: 15px;
+    color: #00ff00; 
+    }
+QLabel:hover
+    {
+    font: 14pt "Arial";
+    border-radius: 15px;
+    color: #00b300;
+    }
+'''
+
 DB_FILE_NAME = "DataBases.db"
 
 # prepare Log file

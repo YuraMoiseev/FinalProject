@@ -1,12 +1,11 @@
 import threading
-import time
 import os
 from Protocol import *
 from CClientBL import CClientBL
-from PyQt5.QtWidgets import QApplication, QDialog, QPushButton, QMainWindow, QLabel, QLineEdit, QGraphicsOpacityEffect, \
-    QWidget, QComboBox
+from PyQt5.QtWidgets import *
 from PyQt5.QtCore import QPropertyAnimation, QSequentialAnimationGroup, QParallelAnimationGroup, QPoint
 from PyQt5 import uic
+from CQFileDropWidget import QFileDropWidget
 
 class CConnectGUI(QMainWindow):
     def __init__(self):
@@ -170,22 +169,25 @@ class CClientGUI(CClientBL, QMainWindow):
 
     def on_click_register(self):
 
-        obj = CLoginGUI(parent_wnd=self)
+        obj = CLoginGUI(parent_wnd=self, client_object=self)
         self.windows.append(obj)
         self.hide()
         obj.create_register_ui()
 
     def on_click_login(self):
 
-        obj = CLoginGUI(parent_wnd=self)
+        obj = CLoginGUI(parent_wnd=self, client_object=self)
         self.windows.append(obj)
         self.hide()
         obj.create_login_ui()
 
 
 class CLoginGUI(QDialog):
-    def __init__(self, parent_wnd=None):
+    def __init__(self, parent_wnd=None, client_object=None):
         QDialog.__init__(self)
+
+        self._parent_wnd = parent_wnd
+        self._client_object = client_object
 
         self.label_login = None
         self.label_password = None
@@ -201,8 +203,6 @@ class CLoginGUI(QDialog):
         self.button_register = None
         self.button_login = None
         self.button_forgot_pw = None
-
-        self._parent_wnd = parent_wnd
 
     def create_login_ui(self):
         uic.loadUi("GUI/UIs/LoginGUI.ui", self)
@@ -300,7 +300,7 @@ class CLoginGUI(QDialog):
         else:
             self._parent_wnd.windows.clear()
             # main_window = MainWindow(callback_home=back_home,callback_send=send)
-            main_window = RecordWindow(parent_wnd=self._parent_wnd)
+            main_window = MainWindow(parent_wnd=self._parent_wnd)
             self._parent_wnd.windows.append(main_window)
             self.hide()
             # main_window.create_main_ui()
@@ -315,50 +315,59 @@ class CLoginGUI(QDialog):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, parent_wnd):
+    def __init__(self, parent_wnd=None):
         QMainWindow.__init__(self)
 
         self._parent_wnd = parent_wnd
 
-        self.label_entry = None
-        self.label_receive = None
+        self._children_record_window = None
+        self._children_songs_window = None
+        self._children_requests_window = None
 
-        self.send_entry = None
-        self.receive_entry = None
 
-        self.button_send = None
+        self.label_welcome = None
+        self.label_do_next = None
+
+        self.button_trace = None
+        self.button_songs = None
+        self.button_requests = None
         self.button_back = None
+
+        self.create_main_ui()
 
     def create_main_ui(self):
         uic.loadUi("GUI/UIs/MainWindowGUI.ui", self)
-        self.setFixedSize(500, 700)
+        self.setFixedSize(800, 500)
 
-        self.label_entry = self.findChild(QLabel, "LabelSend")
-        self.label_receive = self.findChild(QLabel, "LabelReceive")
+        self.label_welcome = self.findChild(QLabel, "LabelWelcome")
+        self.label_do_next = self.findChild(QLabel, "LabelDoNext")
 
-        self.send_entry = self.findChild(QLineEdit, "LineEditSend")
-        self.receive_entry = self.findChild(QLineEdit, "LineEditReceive")
-        self.receive_entry.setReadOnly(True)
+        self.button_trace = self.findChild(QPushButton, "ButtonTrace")
+        self.button_songs = self.findChild(QPushButton, "ButtonSongs")
+        self.button_requests = self.findChild(QPushButton, "ButtonRequests")
 
-        self.button_send = self.findChild(QPushButton, "ButtonSend")
         self.button_back = self.findChild(QPushButton, "ButtonBack")
 
-        self.button_send.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.button_trace.setStyleSheet(BUTTON_STYLE_SHEET)
         self.button_back.setStyleSheet(BUTTON_STYLE_SHEET)
 
         self.button_back.clicked.connect(self.on_click_back)
-        self.button_send.clicked.connect(self.on_click_send)
+        self.button_trace.clicked.connect(self.on_click_trace)
+        self.button_songs.clicked.connect(self.on_click_songs)
+        self.button_requests.clicked.connect(self.on_click_requests)
         self.show()
 
 
-    def on_click_send(self):
-        data = self.send_entry.text()
-        self._parent_wnd.send_data(data)
-        answer = self._parent_wnd.receive_data()
-        if not answer:
-            self.send_entry.setText("Server didn't answer...")
-        else:
-            self.receive_entry.setText(answer)
+    def on_click_trace(self):
+        if self._children_record_window is None:
+            self._children_record_window = RecordWindow(self, self._parent_wnd)
+
+    def on_click_requests(self):
+        if self._children_requests_window is None:
+            self._children_requests_window = RequestWindow(self, self._parent_wnd)
+
+    def on_click_songs(self):
+        print("Will be done later...")
 
     def on_click_back(self):
         self._parent_wnd.show()
@@ -366,10 +375,11 @@ class MainWindow(QMainWindow):
 
 
 class RecordWindow(QMainWindow):
-    def __init__(self, parent_wnd):
+    def __init__(self, parent_wnd=None, client_object=None):
         QMainWindow.__init__(self)
 
         self._parent_wnd = parent_wnd
+        self._client_object = client_object
 
         self.label_record = None
 
@@ -409,48 +419,141 @@ class RecordWindow(QMainWindow):
         self.show()
 
     def setup_combo_box(self):
-        devices = self._parent_wnd.get_audio_devices()
+        devices = self._client_object.get_audio_devices()
         for i in devices:
             self.combo_box_devices.addItem(i)
-        self.combo_box_devices.currentIndexChanged.connect(self.selection_change)
+        self.combo_box_devices.currentIndexChanged.connect(self.select_audio_device)
 
-    def selection_change(self):
-        self._parent_wnd.select_audio_device(self.combo_box_devices.currentText())
+    def select_audio_device(self):
+        self._client_object.select_audio_device(self.combo_box_devices.currentText())
 
     def _record(self):
-        self._parent_wnd.record_wav("recording.wav")
-        self._parent_wnd.send_wav("recording.wav")
+        self._client_object.record_wav("recording.wav")
+        self._client_object.send_wav("recording.wav")
         try:
             os.remove("recording.wav")
             write_to_log(f"File 'recording.wav' has been deleted successfully.")
         except Exception as e:
             write_to_log(f"An error occurred: {e}")
-        if not self._parent_wnd.is_recording:
+        if not self._client_object.is_recording:
             return
         self.label_record.setText("Recording done!")
-        self._parent_wnd.cond()
+        self._client_object.cond()
         # time.sleep(3)
         # self.label_record.setText("Record")
 
     def on_click_record(self):
-        if not self._parent_wnd.is_recording:
+        if not self._client_object.is_recording:
             self.label_record.setText("Recording...")
-            self._parent_wnd.cond()
+            self._client_object.cond()
             recording = threading.Thread(target=self._record)
             recording.start()
         else:
             self.label_record.setText("Record")
-            self._parent_wnd.cond()
+            self._client_object.cond()
 
     def on_click_back(self):
         self._parent_wnd.show()
         self.close()
 
-    def select_audio_device(self):
-        pass
+
+class RequestWindow(QMainWindow):
+    def __init__(self, parent_wnd=None, client_object=None):
+        QMainWindow.__init__(self)
+        self._parent_wnd = parent_wnd
+
+        self.label_title = None
+        self.label_name = None
+        self.label_artist = None
+        self.label_link = None
+        self.label_description = None
+        self.label_file = None
+        self.label_request_fail = None
+
+        self.name_entry = None
+        self.artist_entry = None
+        self.link_entry = None
+        self.description_entry = None
+        self.file_drop = None
+
+        self.button_send_request = None
+        self.button_back = None
+        self.create_main_ui()
+
+    def create_main_ui(self):
+        uic.loadUi("GUI/UIs/RequestClientWndGUI.ui", self)
+        self.setFixedSize(900, 700)
+
+        self.label_title = self.findChild(QLabel, "LabelTitle")
+
+        self.label_name = self.findChild(QLabel, "LabelName")
+        self.name_entry = self.findChild(QLineEdit, "LineEditName")
+        self.name_entry.setStyleSheet(ENTRY_STYLE_SHEET)
+
+        self.label_artist = self.findChild(QLabel, "LabelArtist")
+        self.artist_entry = self.findChild(QLineEdit, "LineEditArtist")
+        self.artist_entry.setStyleSheet(ENTRY_STYLE_SHEET)
+
+        self.label_link = self.findChild(QLabel, "LabelLink")
+        self.link_entry = self.findChild(QLineEdit, "LineEditLink")
+        self.link_entry.setStyleSheet(ENTRY_STYLE_SHEET)
+
+        self.label_description = self.findChild(QLabel, "LabelDescription")
+        self.description_entry = self.findChild(QLineEdit, "LineEditDescription")
+        self.description_entry.setStyleSheet(ENTRY_STYLE_SHEET)
+
+        self.label_file = self.findChild(QLabel, "LabelFile")
+        self.set_up_file_drop_widget()
+
+        self.button_send_request = self.findChild(QPushButton, "ButtonRequest")
+        self.button_back = self.findChild(QPushButton, "ButtonBack")
+
+        self.button_send_request.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.button_back.setStyleSheet(BUTTON_STYLE_SHEET)
+
+        self.button_send_request.clicked.connect(self.on_click_send_request)
+        self.button_back.clicked.connect(self.back_to_home)
+
+        self.show()
+
+    def set_up_file_drop_widget(self):
+        """
+        A function that sets up the QFileDropWidget
+        Replaces the original auxiliary widget from ui
+        """
+        # Find the QLabel
+        original_label = self.findChild(QLabel, "FileDrop")
+
+        # Remove the original label from the layout
+        layout = original_label.parent().layout()
+        layout.removeWidget(original_label)
+
+        # Optionally, delete the original QLabel to clean up
+        original_label.deleteLater()
+
+        # Create an instance of the custom FileDropLabel
+        self.file_drop = QFileDropWidget(self)
+
+        # Add the custom label to the layout
+        layout.addWidget(self.file_drop)
+
+        # Update the layout to reflect changes
+        layout.update()
+
+
+    def back_to_home(self):
+        self._parent_wnd.show()
+        self.close()
+
+
+    def on_click_send_request(self):
+        data = self.file_drop.text()
+
+
 
 
 if __name__ == "__main__":
     app = QApplication([])
     Client = CConnectGUI()
+    # client = RequestWindow()
     app.exec_()
