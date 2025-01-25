@@ -1,5 +1,5 @@
 import threading
-from protocol import *
+from Protocol import *
 
 # events
 NEW_CONNECTION: int = 1

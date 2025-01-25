@@ -1,6 +1,6 @@
 import time
 
-from protocol import *
+from Protocol import *
 import os
 import pyaudio
 import wave

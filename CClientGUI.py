@@ -1,7 +1,7 @@
 import threading
 import time
 import os
-from protocol import *
+from Protocol import *
 from CClientBL import CClientBL
 from PyQt5.QtWidgets import QApplication, QDialog, QPushButton, QMainWindow, QLabel, QLineEdit, QGraphicsOpacityEffect, \
     QWidget, QComboBox

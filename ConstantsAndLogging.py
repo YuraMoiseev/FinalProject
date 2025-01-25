@@ -61,6 +61,8 @@ border-radius: 5px;
 border: 2px solid #00ff00;
 color: #00ff00;'''
 
+DB_FILE_NAME = "DataBases.db"
+
 # prepare Log file
 LOG_FILE = 'LOG.log'
 logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
