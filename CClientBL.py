@@ -80,7 +80,7 @@ class CClientBL:
         except Exception as e:
             write_to_log(f"Exception on selection audio device - {e}")
 
-    def send_wav(self, file_name: str) -> bool:
+    def send_file(self, file_name: str) -> bool:
         if not os.path.exists(file_name):
             write_to_log(f"[CLIENT_BL] - file does not exist: {file_name}")
             return False
@@ -189,6 +189,6 @@ if __name__ == "__main__":
     # client.record_wav("recording.wav")
     # client.send_wav("recording.wav")
     client.record_wav()
-    client.send_wav("recording.wav")
+    client.send_file("recording.wav")
     client.receive_data()
     client.disconnect()

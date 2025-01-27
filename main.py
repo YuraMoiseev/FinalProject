@@ -406,8 +406,6 @@ midi_file_name = "output_fc_pm.mid"
 # sound = AudioSegment.from_mp3(src)
 # sound.export(dst, format="wav")
 
-
-
 # main_analysis(file_path, midi_file_name, 0.01)
 # mp3_to_wav("MusicFiles/Audio/FCtest.mp3", "FCtest.wav")
 
@@ -435,8 +433,6 @@ def print_midi_info(midi_file_path):
             print(msg)
         print("\n" + "-" * 30 + "\n")
 
-
-print_midi_info("MusicFiles/Midi/output_fc_crepe.mid")
 
 # Min heap of melodies by difference
 

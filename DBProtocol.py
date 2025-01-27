@@ -1,18 +1,21 @@
 import sqlite3
 from ConstantsAndLogging import *
 from SecurityProtocol import hash_password, verify_password
+import ast
 
 
-def create_db_tables():
+def create_users_table():
     # create users table in DB
     connection = sqlite3.connect(DB_FILE_NAME)
     cursor = connection.cursor()
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS Users (
         id INTEGER PRIMARY KEY,
+        is_admin BOOLEAN NOT NULL,
         login TEXT UNIQUE NOT NULL,
         email TEXT UNIQUE NOT NULL,
         hashed_password TEXT NOT NULL
+        device_id_hash TEXT,
     );
     ''')
     connection.commit()
@@ -44,7 +47,9 @@ def create_requests_table():
     CREATE TABLE IF NOT EXISTS Requests (
         id INTEGER PRIMARY KEY,
         song_name TEXT NOT NULL,
+        artist_name TEXT NOT NULL
         description TEXT
+        midi-audio_file BLOB
         requester_id INTEGER NOT NULL,
         FOREIGN KEY (requester_id) REFERENCES Users (id) ON DELETE CASCADE ON UPDATE CASCADE
     );
@@ -53,17 +58,34 @@ def create_requests_table():
     connection.close()
 
 
-def create_my_requests_table():
-    # Create my_requests table in DB
+def create_sessions_table():
+    # Create requests table in DB
+    connection = sqlite3.connect(DB_FILE_NAME)
+    cursor = connection.cursor()
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS Sessions (
+        id INTEGER PRIMARY KEY,
+        device_id_hash TEXT,
+        is_running BOOLEAN NOT NULL,
+        last_action DATETIME NOT NULL,
+        user_id INTEGER NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES Users (id)
+    )
+    """)
+    connection.commit()
+    connection.close()
+
+
+def create_devices_table():
+    # Create songs table in DB
     connection = sqlite3.connect(DB_FILE_NAME)
     cursor = connection.cursor()
     cursor.execute('''
-    CREATE TABLE IF NOT EXISTS My_Requests (
+    CREATE TABLE IF NOT EXISTS Songs (
         id INTEGER PRIMARY KEY,
-        request_id INTEGER NOT NULL,
-        requester_id INTEGER NOT NULL,
-        FOREIGN KEY (request_id) REFERENCES Requests (id) ON DELETE CASCADE ON UPDATE CASCADE,
-        FOREIGN KEY (requester_id) REFERENCES Users (id) ON DELETE CASCADE ON UPDATE CASCADE
+        song_name TEXT NOT NULL,
+        added_by INTEGER NOT NULL,
+        FOREIGN KEY (added_by) REFERENCES Users (id) ON DELETE CASCADE ON UPDATE CASCADE
     );
     ''')
     connection.commit()
@@ -97,7 +119,7 @@ def register_client(data):
 
 def check_password(data):
     try:
-        username_or_email, none, password = parse_args(str(data))
+        username_or_email, password = parse_args(str(data))
         connection = sqlite3.connect(DB_FILE_NAME)
         cursor = connection.cursor()
         cursor.execute("SELECT hashed_password FROM Users WHERE login = ? OR email = ?", (username_or_email, username_or_email))
@@ -115,7 +137,25 @@ def check_password(data):
         write_to_log("[PROTOCOL] - exception on checking password - {}".format(e))
 
 
-def add_song(song_name, midi_file_path, added_by):
+def add_request(data, user_id):
+    song_name, artist_name, link, description, file_path = parse_args(data)
+    # Connect to the database
+    connection = sqlite3.connect(DB_FILE_NAME)
+    cursor = connection.cursor()
+
+    # Insert the data into the Requests table
+    cursor.execute('''
+        INSERT INTO Requests (song_name, artist_name, link, description, user_id, midi-audio_file)
+        VALUES (?, ?, ?, ?, ?, ?);
+        ''', (song_name, artist_name, link, description, user_id))
+
+    connection.commit()
+    connection.close()
+
+
+
+def add_song(data, user_id):
+    midi_file_path, song_name, artist_name = parse_args(data)
     # Connect to the database
     connection = sqlite3.connect(DB_FILE_NAME)
     cursor = connection.cursor()
@@ -126,27 +166,13 @@ def add_song(song_name, midi_file_path, added_by):
 
     # Insert the data into the Songs table
     cursor.execute('''
-        INSERT INTO Songs (melodies, song_name, added_by)
-        VALUES (?, ?, ?);
-        ''', (blob_data, song_name, added_by))
+        INSERT INTO Songs (melodies, song_name, artist_name, added_by)
+        VALUES (?, ?, ?, ?);
+        ''', (blob_data, song_name, artist_name, user_id))
 
     connection.commit()
     connection.close()
 
-
-def add_request(song_name, description, added_by):
-    # Connect to the database
-    connection = sqlite3.connect(DB_FILE_NAME)
-    cursor = connection.cursor()
-
-    # Insert the data into the Requests table
-    cursor.execute('''
-        INSERT INTO Requests (song_name, description, added_by)
-        VALUES (?, ?, ?);
-        ''', (song_name, description, added_by))
-
-    connection.commit()
-    connection.close()
 
 def remove_request(request_id):
     # Connect to the database
@@ -161,14 +187,21 @@ def remove_request(request_id):
     connection.commit()
     connection.close()
 
-
-def parse_args(data: str):
+# TODO: make a universal parse func
+def parse_args_login1(data: str):
     username = data[data.find("'login': ")+9:data.find(",")]
     data = data[data.find(",")+1:]
     email = data[data.find("'email': ")+9:data.find(",")]
     data = data[data.find(",")+1:]
     password = data[data.find("'password': ")+12:data.find("}")]
     return username.replace("'", ""), email.replace("'", ""), password.replace("'", "")
+
+
+def parse_args(data: str):
+    # Convert the string representation of a dictionary back to a Python dictionary
+    dictionary = ast.literal_eval(data)
+    # Return the values as a tuple
+    return tuple(dictionary.values())
 
 
 def verify_entry_validity(username: str, email: str, password: str):
@@ -178,6 +211,6 @@ def verify_entry_validity(username: str, email: str, password: str):
         return False, "Email is invalid - prohibited characters used"
     if "@" not in email:
         return False, "Email is invalid - @?"
-    if any(character in username for character in INVALID_CHARACTERS):
+    if any(character in password for character in INVALID_CHARACTERS):
         return False, "Password is invalid - prohibited characters used"
     return True, ""

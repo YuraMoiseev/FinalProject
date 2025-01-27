@@ -1,5 +1,8 @@
 import threading
 import os
+
+from numba.scripts.generate_lower_listing import description
+
 from Protocol import *
 from CClientBL import CClientBL
 from PyQt5.QtWidgets import *
@@ -429,7 +432,7 @@ class RecordWindow(QMainWindow):
 
     def _record(self):
         self._client_object.record_wav("recording.wav")
-        self._client_object.send_wav("recording.wav")
+        self._client_object.send_file("recording.wav")
         try:
             os.remove("recording.wav")
             write_to_log(f"File 'recording.wav' has been deleted successfully.")
@@ -461,6 +464,7 @@ class RequestWindow(QMainWindow):
     def __init__(self, parent_wnd=None, client_object=None):
         QMainWindow.__init__(self)
         self._parent_wnd = parent_wnd
+        self._client_object = client_object
 
         self.label_title = None
         self.label_name = None
@@ -547,13 +551,16 @@ class RequestWindow(QMainWindow):
 
 
     def on_click_send_request(self):
-        data = self.file_drop.text()
-
-
+        data = {
+                "name": self.name_entry.text(), "artist": self.artist_entry.text(),
+                "link": self.link_entry.text(), "description": self.description_entry.text(),
+                "file": self.file_drop.chosen_file_path
+                }
+        self._client_object.send_data(f"Request>{data}")
 
 
 if __name__ == "__main__":
     app = QApplication([])
-    Client = CConnectGUI()
-    # client = RequestWindow()
+    # Client = CConnectGUI()
+    client = RequestWindow()
     app.exec_()

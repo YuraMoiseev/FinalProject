@@ -24,13 +24,17 @@ def check_cmd(data):
     cmd, args = parse_message(data)
     if type(cmd) == bytes:
         cmd = cmd.decode(FORMAT)
-    return cmd in REQUESTS
+    if cmd in REQUESTS_1:
+        return 1
+    if cmd in REQUESTS_2:
+        return 2
+    return 0
 
 
 def create_request_msg(public_key, data) -> str:
     """Create a valid protocol message and encrypt it using RSA, will be sent by client, with length field"""
     request = ''
-    if check_cmd(data):
+    if check_cmd(data) != 0:
         request += f"{data}"
     else:
         request = f"Non-supported cmd"
@@ -51,12 +55,14 @@ def create_response(data):
         cmd = cmd.decode(FORMAT)
     if type(args) == bytes:
         args = args.decode(FORMAT)
-    if check_cmd(data) and cmd !="Register" and cmd !="Login":
-        response = REQUESTS[cmd]
+    if check_cmd(data) == 1:
+        response = REQUESTS_1[cmd]
     elif cmd == "Register":
         response = register_client(args)
     elif cmd == "Login":
         response = check_password(args)
+    elif cmd == "Request":
+        response = add_request(args)
     else:
         response = "Non-supported cmd"
     return response
@@ -95,7 +101,8 @@ def receive_key(my_socket:socket):
 #     return key
 
 
-REQUESTS = {"Hello": "Hello!", "Find": best_matches, SEND_FILE_REQUEST: SEND_FILE_APPROVE,
-                SEND_FILE_SUCCESS: SEND_FILE_SUCCESS, SEND_FILE_FAIL: SEND_FILE_FAIL, DISCONNECT_MSG: "Bye!",
-                "Register": "", "Login": "", "Request":"Request"}
+REQUESTS_1 = {"Hello": "Hello!", "Find": best_matches, SEND_FILE_REQUEST: SEND_FILE_APPROVE,
+              SEND_FILE_SUCCESS: SEND_FILE_SUCCESS, SEND_FILE_FAIL: SEND_FILE_FAIL, DISCONNECT_MSG: "Bye!"}
+
+REQUESTS_2 = ["Register", "Login", "Request"]
 
