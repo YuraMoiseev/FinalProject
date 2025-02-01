@@ -2,7 +2,9 @@ from cryptography.hazmat.primitives.asymmetric import rsa,padding
 from cryptography.hazmat.primitives import serialization,hashes
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
 from argon2 import PasswordHasher
-from ConstantsAndLogging import FORMAT, write_to_log
+from ConstantsAndLogging import FORMAT, write_to_log, SECRET_KEY
+import hmac
+import hashlib
 
 def to_bytes(data):
     if not isinstance(data, bytes):
@@ -106,3 +108,7 @@ def verify_password(hashed_password, password):
     except Exception as e:
         write_to_log("[SECURITY_PROTOCOL] password verification failed with exception - {}".format(e))
         return False
+
+
+def hash_device_id(device_id):
+    return hmac.new(SECRET_KEY, device_id.encode(), hashlib.sha256).hexdigest()

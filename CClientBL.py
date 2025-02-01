@@ -4,6 +4,7 @@ from Protocol import *
 import os
 import pyaudio
 import wave
+import uuid
 
 class CClientBL:
 
@@ -17,6 +18,7 @@ class CClientBL:
         self.serv_public_key = None
         self.is_recording = False
         self._audio_devices = None
+        self.device_id = str(uuid.getnode()) # MAC address-based ID
         self.selected_audio_device = 0
 
     def connect(self) -> socket:
@@ -108,7 +110,9 @@ class CClientBL:
                 write_to_log(f"[CLIENT_BL] received from [SERVER_BL] {self.receive_data()}")
                 return True
             else:
-                raise Exception(f"[CLIENT_BL] - sending {file_name} was not approved")
+                write_to_log("[CLIENT_BL] - sending {file_name} was not approved")
+                return False
+
         except Exception as e:
             write_to_log("[CLIENT_BL] Exception on send_wav: {}".format(e))
             self._client_socket.send(f"{0}\n".encode())
@@ -171,11 +175,12 @@ class CClientBL:
                 write_to_log(f"[CLIENT_BL] received {self._client_socket.getsockname()} {msg.decode(FORMAT)} ")
                 return msg.decode(FORMAT)
             else:
-                write_to_log("[CLIENT_BL] Invalid msg")
-                return "Invalid msg"
+                write_to_log(f"[CLIENT_BL] error - {msg}")
+                return msg
         except Exception as e:
             write_to_log("[CLIENT_BL] Exception on receive: {}".format(e))
             return ""
+
 
 
 if __name__ == "__main__":

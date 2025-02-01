@@ -28,6 +28,8 @@ def check_cmd(data):
         return 1
     if cmd in REQUESTS_2:
         return 2
+    if cmd in LOGIN_REQUESTS:
+        return 3
     return 0
 
 
@@ -45,10 +47,12 @@ def create_request_msg(public_key, data) -> str:
 def create_response_msg(public_key, data) -> str:
     """Encrypt and make the given protocol response valid, will be sent by server, with length field"""
     response = encrypt_msg(public_key, data)
-    return f"{len(str(response)):0{HEADER_LEN}d}".encode(FORMAT) + DELIMITER  + response
+    if response is None:
+        response = b''
+    return f"{len(str(response)):0{HEADER_LEN}d}".encode(FORMAT) + response
 
 
-def create_response(data):
+def create_response(data, session_id=None): # Session id is kept in the client handler on the server side and thus cannot be obtained from client's message
     """Create and a valid protocol message, will be sent by server, with length field"""
     cmd, args = parse_message(data)
     if type(cmd) == bytes:
@@ -59,10 +63,14 @@ def create_response(data):
         response = REQUESTS_1[cmd]
     elif cmd == "Register":
         response = register_client(args)
-    elif cmd == "Login":
-        response = check_password(args)
+    elif cmd == "Login_with_data":
+        response = login_with_data(args)
     elif cmd == "Request":
-        response = add_request(args)
+        response = add_request(args, session_id)
+    elif cmd == "Login_with_session":
+        response = login_with_old_session(args)
+    elif cmd == "Delete_session":
+        response = delete_session(session_id)
     else:
         response = "Non-supported cmd"
     return response
@@ -82,8 +90,16 @@ def receive_msg(my_socket: socket, private_key) -> (bool, str):
             return False, "Error"
 
         return True, buf
+
+    except socket.timeout:
+        return False, "Socket Timeout"
+
+    except (socket.error, ConnectionResetError):
+        return False, "Server workflow terminated"
+
     except Exception as e:
-        write_to_log("[PROTOCOL] receive msg failed with exception {}".format(e))
+        # write_to_log("[PROTOCOL] receive msg failed with exception {}".format(e))
+        return False, e
 
 
 def receive_key(my_socket:socket):
@@ -94,15 +110,12 @@ def receive_key(my_socket:socket):
         key = load_pem_public_key(pem)
         return key
 
-# def receive_key(my_socket:socket):
-#     pem = my_socket.recv(BUFFER_SIZE)
-#     write_to_log(pem)
-#     key = load_pem_public_key(pem)
-#     return key
-
 
 REQUESTS_1 = {"Hello": "Hello!", "Find": best_matches, SEND_FILE_REQUEST: SEND_FILE_APPROVE,
               SEND_FILE_SUCCESS: SEND_FILE_SUCCESS, SEND_FILE_FAIL: SEND_FILE_FAIL, DISCONNECT_MSG: "Bye!"}
 
-REQUESTS_2 = ["Register", "Login", "Request"]
+REQUESTS_2 = ["Register", "Request", "Delete_session"]
+
+
+LOGIN_REQUESTS = ["Login_with_session", "Login_with_data"]
 

@@ -70,6 +70,10 @@ class CServerGUI(CServerBL, QMainWindow):
         self._parent_wnd.show()
         self.close()
 
+    def closeEvent(self, event):
+        self.stop_server()
+        event.accept()
+
     def create_homepage_ui(self):
         uic.loadUi("GUI/UIs/ServerMainPageGUI.ui", self)
         self.setFixedSize(600, 475)

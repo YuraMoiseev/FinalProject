@@ -116,3 +116,61 @@ class QFileDropWidget(QWidget):
         else:
             return None # In case of cancel event, return None
 
+class QPopUpWidget(QDialog):
+    def __init__(self, labeltext1="This is a pop-up dialog", labeltext2="Choose one of the options!",  parent=None):
+        super().__init__(parent)
+
+        self.can_close = False
+
+        self.setStyleSheet("""background-color:black;""")
+
+        self.setWindowTitle("Pop-Up")
+        self.setFixedSize(350, 200)
+
+
+        self.layout = QVBoxLayout()
+        self.label_info = QLabel(labeltext1)
+        self.label_info.setStyleSheet(LABEL_STYLE_SHEET)
+        self.layout.addWidget(self.label_info)
+
+        self.label_error = QLabel(labeltext2)
+        self.label_error.setStyleSheet(ERROR_LABEL_STYLE_SHEET)
+        self.layout.addWidget(self.label_error)
+        self.label_error.hide()
+
+        self.button_yes = QPushButton("Yes")
+        self.button_no = QPushButton("No")
+        self.button_yes.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.button_no.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.button_yes.clicked.connect(self.on_click_positive)
+        self.button_no.clicked.connect(self.on_click_negative)
+
+
+        self.layout.addWidget(self.button_yes)
+        self.layout.addWidget(self.button_no)
+
+        self.setLayout(self.layout)
+
+    # override if needed
+    def on_click_positive(self):
+        self.can_close = True
+        self.accept()
+
+    def on_click_negative(self):
+        self.can_close = True
+        self.reject()
+
+
+    def closeEvent(self, event):
+        if self.can_close:
+            event.accept()
+        else:
+            event.ignore()
+            self.label_error.show()
+
+
+if __name__ == "__main__":
+    app = QApplication([])
+    window = QPopUpWidget()
+    window.show()
+    app.exec()

@@ -21,6 +21,11 @@ SEND_FILE_APPROVE: str = "Approve"
 SEND_FILE_SUCCESS: str = "Wav file successfully transferred"
 SEND_FILE_FAIL: str = "Could not transfer wav file"
 
+POP_UP_LABEL1: str = "There has been found a session associated with your device. Do you want to log in via the existing session?"
+POP_UP_LABEL2: str = "Choose one of the options!"
+POP_UP_LABEL3: str = "Do you want to save the existing session to log into the account without having to enter credentials?"
+
+
 DELIMITER = b''
 
 BUTTON_STYLE_SHEET: str = '''QPushButton {
@@ -61,6 +66,18 @@ border-radius: 5px;
 border: 2px solid #00ff00;
 color: #00ff00;'''
 
+LABEL_STYLE_SHEET: str = '''
+    font: 14pt "Arial";
+    border-radius: 15px;
+    color: #00ff00; 
+    '''
+
+ERROR_LABEL_STYLE_SHEET: str = '''
+    font: 14pt "Arial";
+    border-radius: 15px;
+    color: #ff0000; 
+    '''
+
 DROP_FILE_STYLE_SHEET: str = '''
 QLabel
     {
@@ -78,6 +95,8 @@ QLabel:hover
 
 DB_FILE_NAME = "DataBases.db"
 
+SECRET_KEY = b"Something_that_is_here_now_but_will_be_securely_stored_later"  # Keep this secret!
+
 # prepare Log file
 LOG_FILE = 'LOG.log'
 logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -86,3 +105,4 @@ logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format='%(asctime)s -
 def write_to_log(msg):
     logging.info(msg)
     print(msg)
+

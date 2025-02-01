@@ -8,7 +8,8 @@ from CClientBL import CClientBL
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import QPropertyAnimation, QSequentialAnimationGroup, QParallelAnimationGroup, QPoint
 from PyQt5 import uic
-from CQFileDropWidget import QFileDropWidget
+from PyQtExtensions import QFileDropWidget, QPopUpWidget
+
 
 class CConnectGUI(QMainWindow):
     def __init__(self):
@@ -66,10 +67,12 @@ class CClientGUI(CClientBL, QMainWindow):
         self.welcome_label_anim = None
         self.buttons_anim = None
         self.window_anim = None
+        self.connected = False
 
         self._client_socket = self.connect()
         if self._client_socket is not None:
             self.create_homepage_ui()
+            self.connected = False
         else:
             self.create_error_wnd()
 
@@ -172,17 +175,66 @@ class CClientGUI(CClientBL, QMainWindow):
 
     def on_click_register(self):
 
-        obj = CLoginGUI(parent_wnd=self, client_object=self)
-        self.windows.append(obj)
+        self.windows.append(CLoginGUI(parent_wnd=self, client_object=self))
         self.hide()
-        obj.create_register_ui()
+        self.windows[-1].create_register_ui()
 
     def on_click_login(self):
+        # Check the server database for a stored hash of the device to login via an unclose session
+        data = {"device_id": self.device_id}
+        self.safe_send(f"Login_with_session>{data}")
+        result = self.safe_receive()
+        if result == LOGIN_SUCCESS:
+            self.windows.clear()
+            pop_up = QPopUpWidget(POP_UP_LABEL1, POP_UP_LABEL2, self)
+            if pop_up.exec_():
+                main_window = MainWindow(parent_wnd=self)
+                self.windows.append(main_window)
+            else:
+                self.safe_send(f"Delete_session")
+                self.windows.append(CLoginGUI(parent_wnd=self, client_object=self))
+                self.hide()
+                self.windows[-1].create_login_ui()
+        else:
+            self.windows.append(CLoginGUI(parent_wnd=self, client_object=self))
+            self.hide()
+            self.windows[-1].create_login_ui()
 
-        obj = CLoginGUI(parent_wnd=self, client_object=self)
-        self.windows.append(obj)
-        self.hide()
-        obj.create_login_ui()
+    def closeEvent(self, event):
+        if not self.connected:
+            event.accept()
+        else:
+            self.safe_send(DISCONNECT_MSG)
+            if self.safe_receive() == "Bye!":
+                event.accept()
+            else:
+                event.ignore()
+
+    # terminates the workflow in case of an exception arising
+    def safe_send(self, data):
+        is_sent = self.send_data(data)
+        if not is_sent:
+            self.forced_termination()
+            # return False
+        else:
+            return True
+
+    # terminates the workflow in case of an exception arising
+    def safe_receive(self):
+        receive = self.receive_data()
+        if receive == "Server workflow terminated" or receive == "":
+            self.forced_termination()
+        else:
+            return receive
+
+    # in case the connection is broken and termination is required
+    def forced_termination(self):
+        for window in self.windows:
+            window.close()
+        self.windows.clear()
+        self._parent_wnd.client = CClientGUI(self._host, self._port, self._parent_wnd)
+        self.connected = False
+        self.close()
 
 
 class CLoginGUI(QDialog):
@@ -283,8 +335,8 @@ class CLoginGUI(QDialog):
             self.label_reg_fail.setText(validity[1])
         else:
             data = {"login": login, "email": email, "password": password}
-            self._parent_wnd.send_data(f"Register>{data}")
-            result = self._parent_wnd.receive_data()
+            self._parent_wnd.safe_send(f"Register>{data}")
+            result = self._parent_wnd.safe_receive()
             if result != REG_SUCCESS:
                 self.label_reg_fail.show()
                 self.label_reg_fail.setText(result)
@@ -294,9 +346,9 @@ class CLoginGUI(QDialog):
     def on_click_login(self):
         login_text = self.login_entry.text()
         password_text = self.password_entry.text()
-        data = {"login": login_text, "password": password_text}
-        self._parent_wnd.send_data(f"Login>{data}")
-        success = self._parent_wnd.receive_data()
+        data = {"login": login_text, "password": password_text, "device_id" : self._parent_wnd.device_id, "keep_in_sleep": True}
+        self._parent_wnd.safe_send(f"Login_with_data>{data}")
+        success = self._parent_wnd.safe_receive()
         if success != LOGIN_SUCCESS:
             self.label_login_fail.setText(success)
             self.label_login_fail.show()
@@ -352,6 +404,8 @@ class MainWindow(QMainWindow):
         self.button_back = self.findChild(QPushButton, "ButtonBack")
 
         self.button_trace.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.button_songs.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.button_requests.setStyleSheet(BUTTON_STYLE_SHEET)
         self.button_back.setStyleSheet(BUTTON_STYLE_SHEET)
 
         self.button_back.clicked.connect(self.on_click_back)
@@ -373,6 +427,8 @@ class MainWindow(QMainWindow):
         print("Will be done later...")
 
     def on_click_back(self):
+        self._parent_wnd.safe_send("Delete_session")
+        self._parent_wnd.safe_receive()
         self._parent_wnd.show()
         self.close()
 
@@ -457,6 +513,10 @@ class RecordWindow(QMainWindow):
 
     def on_click_back(self):
         self._parent_wnd.show()
+        self.close()
+
+    def closeEvent(self, event):
+        self._parent_wnd._children_record_window = None
         self.close()
 
 
@@ -556,11 +616,15 @@ class RequestWindow(QMainWindow):
                 "link": self.link_entry.text(), "description": self.description_entry.text(),
                 "file": self.file_drop.chosen_file_path
                 }
-        self._client_object.send_data(f"Request>{data}")
+        self._client_object.safe_send(f"Request>{data}")
+
+    def closeEvent(self, event):
+        self._parent_wnd._children_request_window = None
+        self.close()
 
 
 if __name__ == "__main__":
     app = QApplication([])
-    # Client = CConnectGUI()
-    client = RequestWindow()
+    Client = CConnectGUI()
+    # client = RequestWindow()
     app.exec_()
