@@ -428,7 +428,7 @@ class MainWindow(QMainWindow):
 
     def on_click_back(self):
         self._parent_wnd.safe_send("Delete_session")
-        self._parent_wnd.safe_receive()
+        write_to_log(self._parent_wnd.safe_receive())
         self._parent_wnd.show()
         self.close()
 

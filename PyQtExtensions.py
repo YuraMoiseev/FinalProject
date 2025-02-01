@@ -125,7 +125,7 @@ class QPopUpWidget(QDialog):
         self.setStyleSheet("""background-color:black;""")
 
         self.setWindowTitle("Pop-Up")
-        self.setFixedSize(350, 200)
+        self.setFixedSize(500, 200)
 
 
         self.layout = QVBoxLayout()

@@ -218,7 +218,7 @@ class CClientHandler(threading.Thread):
                     # Done for constant refreshing of socket accepting in case of a server workflow termination
                     continue
             # 9. Update the last action of the session
-            if self.session:
+            if self.session is not None:
                 update_last_action(self.session)
 
         # close the client socket and invoke fire event NEW_COMMAND to delete the client from the clients' table

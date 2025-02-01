@@ -149,7 +149,8 @@ def login_client(username_or_email, password):
         account_lock_time = is_account_locked(user_id)
 
         if account_lock_time[0]:
-            return f"{LOGIN_FAIL} - the password for this user was entered too many times. Try again in {account_lock_time[1]//60} minutes and {account_lock_time[1]%60} seconds", None
+            minutes, seconds = account_lock_time[1]//60, account_lock_time[1]%60//1
+            return f"{LOGIN_FAIL} - the password for this user was entered too many times. Try again in {minutes} minutes and {seconds} seconds", None
 
         if verify_password(hashed_password, password):
             reset_failed_attempts(user_id)
@@ -251,6 +252,7 @@ def update_last_action(session_id):
     cursor = connection.cursor()
 
     timestamp = int(time.time())  # Current timestamp
+
     cursor.execute("UPDATE Sessions SET last_action = ? WHERE id = ?", (timestamp, session_id))
 
     connection.commit()
@@ -265,6 +267,7 @@ def login_with_data(data):
         session_id = None
         if is_success:
             session_id = start_session(user_id, device_id, keep_in_sleep)
+
         return login_msg, session_id
     except Exception as e:
         write_to_log(f"[DB_PROTOCOL] login with session failed due to the exception {e}")
@@ -286,7 +289,7 @@ def login_with_old_session(data):
 
         # If the session was found, log the user in
         if result is not None:
-            return LOGIN_SUCCESS, result
+            return LOGIN_SUCCESS, result[0]
         # Else block the user from entering
         else:
             return LOGIN_FAIL + " - session was not found", None
@@ -325,7 +328,6 @@ def add_request(data, session_id):
     except Exception as e:
         write_to_log(f"[DB_PROTOCOL] add request failed due to the exception {e}")
         return False
-
 
 
 def add_song(data, user_id):
