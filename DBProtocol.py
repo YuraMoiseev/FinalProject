@@ -74,6 +74,7 @@ def create_requests_table():
         id INTEGER PRIMARY KEY,
         song_name TEXT NOT NULL,
         artist_name TEXT NOT NULL,
+        link TEXT,
         description TEXT,
         midi_audio_file BLOB,
         requester_id INTEGER NOT NULL,
@@ -315,19 +316,19 @@ def add_request(data, session_id):
 
         # Retrieve the user id from the session
         cursor.execute("SELECT user_id FROM Sessions WHERE id = ?", (session_id,))
-        user_id = cursor.fetchone()
+        user_id = cursor.fetchone()[0]
         # Insert the data into the Requests table
         cursor.execute('''
-            INSERT INTO Requests (song_name, artist_name, link, description, user_id, midi_audio_file)
+            INSERT INTO Requests (song_name, artist_name, link, description, requester_id, midi_audio_file)
             VALUES (?, ?, ?, ?, ?, ?);
             ''', (song_name, artist_name, link, description, user_id, blob_data))
 
         connection.commit()
         connection.close()
-        return True
+        return "Success"
     except Exception as e:
         write_to_log(f"[DB_PROTOCOL] add request failed due to the exception {e}")
-        return False
+        return "Fail"
 
 
 def add_song(data, user_id):

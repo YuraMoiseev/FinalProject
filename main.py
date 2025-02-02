@@ -372,18 +372,6 @@ def create_midi_file(timestamps, pitch_values, lower_limit, upper_limit, midi_fi
     print(f"MIDI file saved at: {midi_path}")
 
 
-def clean_up_midi(midi_file):
-    midi_helper = MidiFile(midi_file)
-    midi_result = MidiFile()
-    midi_result.tracks.append(MidiTrack())
-    for i, track in enumerate(midi_helper.tracks):
-        # Iterate through messages in the track
-        for msg in track:
-            if hasattr(msg, "time") and msg.type == "note_off":
-                if msg.time < 5:
-                    pass
-
-
 def main_analysis(file_path, midi_file_name, time_step=0.015625, lower_limit="C0", upper_limit="C8"):
     # pitch_values, timestamps, a, s = analyze_crepe(file_path, time_step)
     pitch_values, timestamps = analyze_parselmouth(file_path, time_step)
@@ -392,11 +380,21 @@ def main_analysis(file_path, midi_file_name, time_step=0.015625, lower_limit="C0
     create_midi_file(timestamps, pitch_values, lower_limit, upper_limit, midi_file_name)
 
 
+def separate_into_tracks(file_name):
+    file_type = file_name.split(".")[-1]
+    # Command to run Demucs
+    command = f"demucs --{file_type} {file_name}"
+
+    # Execute the command
+    os.system(command)
+
+
 # Example usage
 # file_path = "MusicFiles/Audio/Dream Theater - The Best Of Times Isolated Guitar Solo (John Petrucci).mp3"
 file_path = "MusicFiles/Audio/FCtest.wav"
 midi_file_name = "output_fc_pm.mid"
 
+separate_into_tracks('MusicFiles/Audio/Megadeth-Tornado-of-Souls.mp3')
 
 # # files
 # src = "MusicFiles/Audio/Dream Theater - The Best Of Times Isolated Guitar Solo (John Petrucci).mp3"

@@ -188,8 +188,7 @@ class CClientGUI(CClientBL, QMainWindow):
             self.windows.clear()
             pop_up = QPopUpWidget(POP_UP_LABEL1, POP_UP_LABEL2, self)
             if pop_up.exec_():
-                main_window = MainWindow(parent_wnd=self)
-                self.windows.append(main_window)
+                self.windows.append(MainWindow(parent_wnd=self))
             else:
                 self.safe_send(f"Delete_session")
                 self.windows.append(CLoginGUI(parent_wnd=self, client_object=self))
@@ -264,6 +263,7 @@ class CLoginGUI(QDialog):
         self.setFixedSize(700, 700)
 
         self.label_login_fail = self.findChild(QLabel, "LabelLoginFail")
+        self.label_login_fail.setWordWrap(True)
         self.label_login_fail.hide()
 
         self.label_login = self.findChild(QLabel, "LabelLogin")
@@ -294,6 +294,7 @@ class CLoginGUI(QDialog):
         self.setFixedSize(700, 700)
 
         self.label_reg_fail = self.findChild(QLabel, "LabelRegFail")
+        self.label_reg_fail.setWordWrap(True)
         self.label_reg_fail.hide()
 
         self.label_login = self.findChild(QLabel, "LabelLogin")
@@ -428,7 +429,8 @@ class MainWindow(QMainWindow):
 
     def on_click_back(self):
         self._parent_wnd.safe_send("Delete_session")
-        write_to_log(self._parent_wnd.safe_receive())
+        result = self._parent_wnd.safe_receive()
+        write_to_log(result)
         self._parent_wnd.show()
         self.close()
 
@@ -617,6 +619,7 @@ class RequestWindow(QMainWindow):
                 "file": self.file_drop.chosen_file_path
                 }
         self._client_object.safe_send(f"Request>{data}")
+        self._client_object.safe_receive()
 
     def closeEvent(self, event):
         self._parent_wnd._children_request_window = None
