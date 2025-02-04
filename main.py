@@ -8,6 +8,9 @@ import math
 import crepe
 from scipy.io import wavfile
 # from pydub import AudioSegment
+from fastdtw import fastdtw
+from scipy.spatial.distance import euclidean
+from sortedcontainers import SortedList
 
 # note off/on - type
 
@@ -372,6 +375,118 @@ def create_midi_file(timestamps, pitch_values, lower_limit, upper_limit, midi_fi
     print(f"MIDI file saved at: {midi_path}")
 
 
+def decode_midi(file_name):
+    # Load the MIDI file
+    midi = MidiFile(file_name)
+    result = []
+
+    # Iterate through each track in the MIDI file
+    for track in midi.tracks:
+        sub_result = []  # Array to hold the notes for this track
+        current_time = 0  # Keep track of the current time in ticks
+        active_notes = {}  # Dictionary to track active notes and their end times
+
+        # Iterate through each message in the track
+        for message in track:
+            # Update the current time based on the message's time attribute
+            delta_time = message.time
+
+            # Fill the sub_result array with active notes or silence for the delta_time
+            for _ in range(delta_time):
+                if active_notes:
+                    # If there are active notes, add the lowest note (or any note) to the array
+                    sub_result.append([min(active_notes.keys())])
+                else:
+                    # If no notes are active, add silence (-1)
+                    sub_result.append([-1])
+
+            # Update the current time
+            current_time += delta_time
+
+            # Handle note_on messages (start of a note)
+            if message.type == "note_on" and message.velocity > 0:
+                # Add the note to the active_notes dictionary with its end time
+                active_notes[message.note] = current_time + message.time
+
+            # Handle note_off messages (end of a note)
+            elif message.type == "note_off" or (message.type == "note_on" and message.velocity == 0):
+                # Remove the note from the active_notes dictionary
+                if message.note in active_notes:
+                    del active_notes[message.note]
+
+        # After processing all messages, fill the remaining ticks with silence (-1)
+        # Calculate the total length of the track in ticks
+        total_ticks = current_time
+        # If the sub_result array is shorter than total_ticks, fill the rest with -1
+        while len(sub_result) < total_ticks:
+            sub_result.append(-1)
+
+        # Add the track's notes to the result array
+        result.append(sub_result)
+
+    return result
+
+# Example usage
+file_name = 'MusicFiles/Audio/MidiTestPiano.wav'
+midi_file = 'MidiTestPianoDetected.mid'
+
+# main_analysis(file_name, midi_file)
+
+
+def step_similarities(midi_file_name1, midi_file_name2, number_of_sections=10):
+    user_sample = decode_midi(midi_file_name1)[0] # Recoding only has 1 track
+    song = decode_midi(midi_file_name2)
+    comparison_length = len(user_sample) // (number_of_sections + 1)
+
+    result = SortedList()
+
+    for track in song:
+
+        for i in range(len(track) - comparison_length + 1):
+
+            for j in range(len(user_sample) - comparison_length + 1):
+
+                help = track[i:i + comparison_length], user_sample[j:j + comparison_length]
+
+                similarity = list_difference(help[0], help[1])
+
+                result.add((similarity, (i, j)))
+
+    return result, comparison_length
+
+
+def dtw_similarity(midi_file_name1, midi_file_name2):
+    user_sample = decode_midi(midi_file_name1)[0]  # Recoding only has 1 track
+    song = decode_midi(midi_file_name2)
+
+
+    distance = [fastdtw(track, user_sample, dist=euclidean)[0] for track in song]
+    return distance  # Lower distance = higher similarity
+
+
+def find_best_match(midi_file_name1, midi_file_name2):
+    user_sample = decode_midi(midi_file_name1)[0]
+    song = decode_midi(midi_file_name2)
+
+    comparison_length = len(user_sample)
+
+    best_distance = float("inf")
+    best_position = -1
+    for track in song:
+
+        # Slide the melody over the track
+        for i in range(len(track) - comparison_length + 1):
+            segment = track[i:i + comparison_length]  # Convert segment
+
+            distance, _ = fastdtw(user_sample, segment, dist=euclidean)
+
+            if distance < best_distance:
+                best_distance = distance
+                best_position = i  # Store best match position
+
+    return best_distance, best_position  # Return best match info
+
+
 def main_analysis(file_path, midi_file_name, time_step=0.015625, lower_limit="C0", upper_limit="C8"):
     # pitch_values, timestamps, a, s = analyze_crepe(file_path, time_step)
     pitch_values, timestamps = analyze_parselmouth(file_path, time_step)
@@ -381,6 +496,7 @@ def main_analysis(file_path, midi_file_name, time_step=0.015625, lower_limit="C0
 
 
 def separate_into_tracks(file_name):
+    # Get the file type
     file_type = file_name.split(".")[-1]
     # Command to run Demucs
     command = f"demucs --{file_type} {file_name}"
