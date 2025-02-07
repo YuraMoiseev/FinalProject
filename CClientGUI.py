@@ -616,7 +616,7 @@ class RequestWindow(QMainWindow):
         data = {
                 "name": self.name_entry.text(), "artist": self.artist_entry.text(),
                 "link": self.link_entry.text(), "description": self.description_entry.text(),
-                "file": self.file_drop.chosen_file_path
+                "file": self.file_drop.chosen_file_path is not None
                 }
         self._client_object.safe_send(f"Request>{data}")
         self._client_object.safe_receive()

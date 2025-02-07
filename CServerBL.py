@@ -40,7 +40,6 @@ class CServerBL:
             self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self._server_socket.bind((self._host, self._port))
 
-            # self._server_socket.setblocking(False)
             self._server_socket.settimeout(0.001)
 
             self._server_socket.listen(5)
@@ -64,16 +63,8 @@ class CServerBL:
                     write_to_log(f"[SERVER_BL] fire event - REGISTER_REQUEST")
 
                 except socket.timeout:
-                    if not self._is_srv_running:
-                        write_to_log("1")
                     # Done for constant refreshing of socket accepting in case of a server workflow termination
                     continue
-
-                # except BlockingIOError:
-                #     if not self._is_srv_running:
-                #         write_to_log("2")
-                #     # Done for constant refreshing of socket accepting in case of a server workflow termination
-                #     continue
 
                 except Exception as e:
                     write_to_log(f"[SERVER_BL] - exception {e} on running")
