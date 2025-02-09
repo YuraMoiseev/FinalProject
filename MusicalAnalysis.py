@@ -10,11 +10,13 @@ from scipy.io import wavfile
 from fastdtw import fastdtw
 from scipy.spatial.distance import euclidean
 
+coef = 10
 TIMING_CONST = 24
 TIMING_WEIGHT = 0.001
-MELODY_WEIGHT = 1 - TIMING_WEIGHT
+MELODY_WEIGHT = 1/coef - TIMING_WEIGHT
+PROGRESSION_WEIGHT = 1 - 1/coef
 
-
+# TODO: compare by progression (up/down) with highest weight!!!
 class MidiAnalyzer:
 
     def __init__(self, midi):
@@ -22,6 +24,7 @@ class MidiAnalyzer:
         self.check_validity()
         self.note_sequence = self.note_sequences()
         self.timing_sequence = self.timing_sequences()
+        self.progression_sequence = self.progression_sequences()
 
 
     @classmethod
@@ -89,6 +92,30 @@ class MidiAnalyzer:
             print(f"Exception on extracting timing sequences: {e}")
 
 
+    def progression_sequences(self):
+        try:
+            tracks = []
+            for sequence in self.note_sequence:
+                track = []
+                last_note = None
+                for note in sequence:
+                    if note == -1:
+                        continue
+                    if last_note is None:
+                        last_note = note
+                    elif last_note > note:
+                        track.append(1)
+                    elif last_note < note:
+                        track.append(-1)
+                    else:
+                        track.append(0)
+                tracks.append(track)
+            return tracks
+        except Exception as e:
+            print(f"Exception on extracting progression sequences: {e}")
+
+
+
     # Function to map frequencies to the nearest note
     @staticmethod
     def frequency_to_note_name(frequency):
@@ -116,7 +143,7 @@ class MidiAnalyzer:
         return [self.paired_sequences_track(i) for i in range(len(self.midi.tracks))]
 
     def paired_sequences_track(self, i=0):
-        return [[note] for note in self.note_sequence[i]], [[time] for time in self.timing_sequence[i]]
+        return [[note] for note in self.note_sequence[i]], [[time] for time in self.timing_sequence[i]], [[prog] for prog in self.progression_sequence[i]]
 
     # receives instances of series of notes and relative times and finds the most similar parts
     @staticmethod
@@ -126,16 +153,18 @@ class MidiAnalyzer:
         for i in range(len(track2[0]) - sliding_window_length + 1):
             notes = (track1[0], track2[0][i:i + sliding_window_length])
             timings = (track1[1], track2[1][i:i + sliding_window_length])
+            progressions = (track1[2], track2[2][i:i + sliding_window_length])
 
             # print(notes)
             # print()
             # print(timings)
             # print("\n")
 
-            melody_dtw = fastdtw(track1[0], notes[1], dist=euclidean)
-            timings_dtw = fastdtw(track1[1], timings[1], dist=euclidean)
+            melody_dtw = fastdtw(notes[0], notes[1], dist=euclidean)
+            timings_dtw = fastdtw(timings[0], timings[1], dist=euclidean)
+            progressions_dtw = fastdtw(progressions[0], progressions[1], dist=euclidean)
 
-            similarity = melody_dtw[0] * MELODY_WEIGHT + timings_dtw[0] * TIMING_WEIGHT
+            similarity = progressions_dtw[0] * PROGRESSION_WEIGHT + melody_dtw[0] * MELODY_WEIGHT + timings_dtw[0] * TIMING_WEIGHT
 
             if similarity < res[0] or res[1] == -1:
                 res = similarity, i

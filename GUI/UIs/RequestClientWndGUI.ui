@@ -379,6 +379,24 @@ color: #00ff00;</string>
          </layout>
         </widget>
        </item>
+       <item alignment="Qt::AlignHCenter">
+        <widget class="QLabel" name="SuccessFailLabel">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Maximum" vsizetype="Maximum">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="styleSheet">
+          <string notr="true">font: 14pt &quot;Arial&quot;;
+border-radius: 15px;
+color: #00ff00;</string>
+         </property>
+         <property name="text">
+          <string>Success-Fail label</string>
+         </property>
+        </widget>
+       </item>
       </layout>
      </widget>
     </item>

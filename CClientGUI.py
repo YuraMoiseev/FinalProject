@@ -347,7 +347,7 @@ class CLoginGUI(QDialog):
     def on_click_login(self):
         login_text = self.login_entry.text()
         password_text = self.password_entry.text()
-        data = {"login": login_text, "password": password_text, "device_id" : self._parent_wnd.device_id, "keep_in_sleep": True}
+        data = {"login": login_text, "password": password_text, "device_id" : self._parent_wnd.device_id}
         self._parent_wnd.safe_send(f"Login_with_data>{data}")
         success = self._parent_wnd.safe_receive()
         if success != LOGIN_SUCCESS:
@@ -541,6 +541,7 @@ class RequestWindow(QMainWindow):
         self.link_entry = None
         self.description_entry = None
         self.file_drop = None
+        self.entries = []
 
         self.button_send_request = None
         self.button_back = None
@@ -551,6 +552,8 @@ class RequestWindow(QMainWindow):
         self.setFixedSize(900, 700)
 
         self.label_title = self.findChild(QLabel, "LabelTitle")
+        self.label_request_fail = self.findChild(QLabel, "SuccessFailLabel")
+        self.label_request_fail.hide()
 
         self.label_name = self.findChild(QLabel, "LabelName")
         self.name_entry = self.findChild(QLineEdit, "LineEditName")
@@ -567,6 +570,11 @@ class RequestWindow(QMainWindow):
         self.label_description = self.findChild(QLabel, "LabelDescription")
         self.description_entry = self.findChild(QLineEdit, "LineEditDescription")
         self.description_entry.setStyleSheet(ENTRY_STYLE_SHEET)
+
+        self.entries.append(self.name_entry)
+        self.entries.append(self.artist_entry)
+        self.entries.append(self.link_entry)
+        self.entries.append(self.description_entry)
 
         self.label_file = self.findChild(QLabel, "LabelFile")
         self.set_up_file_drop_widget()
@@ -613,13 +621,28 @@ class RequestWindow(QMainWindow):
 
 
     def on_click_send_request(self):
+        file_type = ""
+        if self.file_drop.chosen_file_path is not None and is_file_present(self.file_drop.chosen_file_path):
+            file_type = self.file_drop.chosen_file_path.split(".")[-1]
+
         data = {
                 "name": self.name_entry.text(), "artist": self.artist_entry.text(),
                 "link": self.link_entry.text(), "description": self.description_entry.text(),
-                "file": self.file_drop.chosen_file_path is not None
+                "file": file_type
                 }
+        # data = {key:("" if value is None else value) for key, value in data.items()}
         self._client_object.safe_send(f"Request>{data}")
-        self._client_object.safe_receive()
+        write_to_log(f"Request>{data}")
+        if self.file_drop.chosen_file_path is not None:
+            result = self._client_object.send_file(self.file_drop.chosen_file_path)
+        else:
+            result = self._client_object.safe_receive()
+        self.label_request_fail.setText(str(result))
+        self.label_request_fail.show()
+        for entry in self.entries:
+            entry.setText("")
+        self.file_drop.chosen_file_path.handle_delete()
+
 
     def closeEvent(self, event):
         self._parent_wnd._children_request_window = None

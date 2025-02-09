@@ -507,11 +507,17 @@ def separate_into_tracks(file_name):
 
 # Example usage
 # file_path = "MusicFiles/Audio/Dream Theater - The Best Of Times Isolated Guitar Solo (John Petrucci).mp3"
-file_path = "MusicFiles/Audio/FCtest.wav"
-midi_file_name = "output_fc_pm.mid"
+data = {
+                "name": "self.name_entry.text()", "artist": "self.artist_entry.text()",
+                "link": None, "description": "",
+                "file": None
+                }
+data = {key:("" if value is None else value) for key, value in data.items() }
+print(data)
 
-separate_into_tracks('MusicFiles/Audio/Megadeth-Tornado-of-Souls.mp3')
 
+file = "C:/Users/Ymois/Downloads/Kipelov.mp3"
+separate_into_tracks(file)
 # # files
 # src = "MusicFiles/Audio/Dream Theater - The Best Of Times Isolated Guitar Solo (John Petrucci).mp3"
 # dst = "DT-The-Best-Of-Times-Solo.wav"

@@ -23,7 +23,7 @@ SEND_FILE_FAIL: str = "Could not transfer wav file"
 
 POP_UP_LABEL1: str = "There has been found a session associated with your device. Do you want to log in via the existing session?"
 POP_UP_LABEL2: str = "Choose one of the options!"
-POP_UP_LABEL3: str = "Do you want to save the existing session to log into the account without having to enter credentials?"
+POP_UP_LABEL3: str = "Do you want to save the existing session to log into the account without having to enter user data?"
 
 
 DELIMITER = b''

@@ -78,7 +78,7 @@ def decrypt_msg(private_key, encrypted_data):
         )
         return decrypted_data
     except Exception as e:
-        write_to_log("[SECURITY_PROTOCOL] message decryption failed with exception {}".format(e))
+        write_to_log(f"[SECURITY_PROTOCOL] message decryption failed with exception {e} with data {encrypted_data}")
         return "Error"
 
 def load_pem(public_key):

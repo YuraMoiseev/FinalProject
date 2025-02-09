@@ -105,30 +105,32 @@ class CClientHandler(threading.Thread):
     def exchange_keys(self):
         key = load_pem(self._private_key.public_key())
         self.client_public_key = receive_key(self.client_socket)
-        # self.client_socket.send(key)
         self.client_socket.send(f"{len(str(key)):0{HEADER_LEN}d}{key.decode()}".encode(FORMAT))
 
     def close_socket(self):
         self.connected = False
         self.client_socket.send(
-            create_response_msg(self.client_public_key, create_response(DISCONNECT_MSG))
+            create_response_msg(self.client_public_key, create_response_and_execute_reaction(DISCONNECT_MSG, self.session, self))
         )
 
-    def receive_file(self, file_name):
+
+    # TODO: move to protocol with socket as an argument
+    def receive_file(self, file_type):
         try:
-            global count_file
+            file_name = get_complete_file_path(file_type, "file", "ServerFiles")
             # Read the file size as a string until the newline character
             file_size_bytes = b""
             while not file_size_bytes.endswith(b"\n"):
                 chunk = self.client_socket.recv(1)
                 if not chunk:
-                    raise Exception("Failed to read file size from the client.")
+                    write_to_log("[SERVER_BL] file transfer - failed to read file size from the client.")
+                    return False
                 file_size_bytes += chunk
 
             # Convert the file size from string to integer
             file_size = int(file_size_bytes.decode(FORMAT).strip())
             if file_size == 0:
-                write_to_log("[SERVER_BL] File size is 0, file not saved")
+                write_to_log("[SERVER_BL] file transfer - file size is 0, file not saved")
                 return True
 
             bytes_received = 0
@@ -143,17 +145,16 @@ class CClientHandler(threading.Thread):
                     bytes_read = self.client_socket.recv(bytes_to_read)
                     if not bytes_read:
                         # Unexpected disconnection
-                        raise Exception("Connection lost before file transfer was complete.")
+                        write_to_log("[SERVER_BL] file transfer - connection lost before file transfer was complete.")
+                        return False
 
                     # Write to file and update received byte count
                     f.write(bytes_read)
                     bytes_received += len(bytes_read)
-            # One more wav file added
-            count_file += 1
             return True
         except Exception as e:
-            write_to_log("[CClientHandler] Exception in receive_wav: {}".format(e))
-            raise e
+            write_to_log(f"[SERVER_BL] exception file transfer - {e}")
+            return False
 
 
     def run(self):
@@ -169,46 +170,20 @@ class CClientHandler(threading.Thread):
                 write_to_log(f"[SERVER_BL] received from {self.address} - {msg}")
                 # 3. If valid command - create response
                 # 4. Create response
-                response = create_response(msg, self.session)
-                # If registration is requested, invoke fire event on REGISTER_REQUEST
+                response = create_response_and_execute_reaction(msg, self.session, self)
+                # 5. If registration is requested, invoke fire event on REGISTER_REQUEST
                 if response == REG_MSG:
                     self.callback(REGISTER_REQUEST, self.address, msg[4:])
                     write_to_log("[SERVER_BL] REGISTER_REQUEST invoked")
-                # 5. Handle a login request and if successful, save sessions id
-                if self.session is None and check_cmd(msg) == 3:
-                    if response[0] == LOGIN_SUCCESS:
-                        self.session = response[1]
-                    response = response[0]
-                # 6. Handle log out
-                if response == "Success":
-                    self.session = None
-                # 7. Save to log
+                # 6. Save to log
                 write_to_log(f"[SERVER_BL] send - {response}")
-                # 8. Send response to the client
+                # 7. Send response to the client
                 self.client_socket.send(create_response_msg(self.client_public_key, response))
-                # 9. If client sent file transfer request - invoke file receive event
-                if response == SEND_FILE_APPROVE:
-                    write_to_log("[SERVER_BL] receiving wav...")
-                    # new file name is defined by how many files we have created
-                    is_recv = self.receive_file(f"file{count_file + 1}")
-                    if is_recv:
-                        self.client_socket.send(
-                            create_response_msg(self.client_public_key, create_response(SEND_FILE_SUCCESS)))
-                        write_to_log(f"[SERVER_BL] {SEND_FILE_SUCCESS}")
-                    else:
-                        self.client_socket.send(
-                            create_response_msg(self.client_public_key, create_response(SEND_FILE_FAIL)))
-
-                        write_to_log(f"[SERVER_BL] {SEND_FILE_FAIL}")
-
-                # Handle DISCONNECT command
-                if msg.decode() == DISCONNECT_MSG:
-                    self.connected = False
             if msg == "Socket Timeout":
                 if not self.connected:
                     # Done for constant refreshing of socket accepting in case of a server workflow termination
                     continue
-            # 9. Update the last action of the session
+            # 8. Update the last action of the session
             if self.session is not None:
                 update_last_action(self.session)
 

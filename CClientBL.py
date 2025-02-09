@@ -64,7 +64,8 @@ class CClientBL:
         self.is_recording = not self.is_recording
         write_to_log(self.is_recording)
 
-    def get_audio_devices(self):
+    @staticmethod
+    def get_audio_devices():
         p = pyaudio.PyAudio()
         devices = {}
         # List all available audio devices
@@ -82,36 +83,29 @@ class CClientBL:
         except Exception as e:
             write_to_log(f"Exception on selection audio device - {e}")
 
+
     def send_file(self, file_name: str) -> bool:
-        if not os.path.exists(file_name):
-            write_to_log(f"[CLIENT_BL] - file does not exist: {file_name}")
-            return False
-        self.send_data(SEND_FILE_REQUEST)
         try:
-            if self.receive_data() == SEND_FILE_APPROVE:
-                # Get the size of the file
-                file_size = os.path.getsize(file_name)
+            # Get the size of the file
+            file_size = os.path.getsize(file_name)
 
-                # Send the file size as a string followed by a newline
-                self._client_socket.send(f"{file_size}\n".encode(FORMAT))
+            # Send the file size as a string followed by a newline
+            self._client_socket.send(f"{file_size}\n".encode(FORMAT))
 
-                # Send the file data
-                with open(file_name, 'rb') as f:
-                    while True:
-                        bytes_read = f.read(BUFFER_SIZE)
-                        if not bytes_read:
-                            # File transmission is done
-                            break
-                        # self._client_socket.send(encrypt_msg(self.serv_public_key, bytes_read))
-                        self._client_socket.send(bytes_read)
+            # Send the file data
+            with open(file_name, 'rb') as f:
+                while True:
+                    bytes_read = f.read(BUFFER_SIZE)
+                    if not bytes_read:
+                        # File transmission is done
+                        break
+                    # self._client_socket.send(encrypt_msg(self.serv_public_key, bytes_read))
+                    self._client_socket.send(bytes_read)
 
-                # Log the file transfer
-                write_to_log(f"[CLIENT_BL] sent {self._client_socket.getsockname()} wav file {file_name}")
-                write_to_log(f"[CLIENT_BL] received from [SERVER_BL] {self.receive_data()}")
-                return True
-            else:
-                write_to_log("[CLIENT_BL] - sending {file_name} was not approved")
-                return False
+            # Log the file transfer
+            write_to_log(f"[CLIENT_BL] sent {self._client_socket.getsockname()} wav file {file_name}")
+            write_to_log(f"[CLIENT_BL] received from [SERVER_BL] {self.receive_data()}")
+            return True
 
         except Exception as e:
             write_to_log("[CLIENT_BL] Exception on send_wav: {}".format(e))

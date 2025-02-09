@@ -93,7 +93,6 @@ def create_sessions_table():
     CREATE TABLE IF NOT EXISTS Sessions (
         id INTEGER PRIMARY KEY,
         device_id_hash TEXT,
-        keep_in_sleep BOOLEAN NOT NULL,
         is_running BOOLEAN NOT NULL,
         last_action TIMESTAMP,
         user_id INTEGER NOT NULL,
@@ -110,7 +109,7 @@ def create_sessions_table():
 
 def register_client(data):
     try:
-        username, email, password = parse_args(str(data))
+        username, email, password = data["login"], data["email"], data["password"]
         hashed_password = hash_password(password)
         valid, msg = verify_entry_validity(username, email, password)
         if not valid:
@@ -141,7 +140,7 @@ def login_client(username_or_email, password):
         result = cursor.fetchone()
 
         if result is None:
-            return LOGIN_FAIL + " - no such user was found in database", None # None is a placeholder to generalize the cases of interaction with client without session
+            return LOGIN_FAIL + " - no such user was found in database", None
 
         hashed_password = result[1]
         user_id = result[0]
@@ -155,7 +154,7 @@ def login_client(username_or_email, password):
 
         if verify_password(hashed_password, password):
             reset_failed_attempts(user_id)
-            return LOGIN_SUCCESS, user_id # Return user ID for future reference
+            return LOGIN_SUCCESS, user_id # Return user id for session creation
 
         else:
             record_failed_attempt(user_id)
@@ -209,19 +208,19 @@ def reset_failed_attempts(user_id):
     connection.close()
 
 
-def start_session(user_id, device_id, keep_in_sleep):
+def start_session(user_id, device_id):
     """Creates a new session for a user and returns the session ID."""
     connection = sqlite3.connect(DB_FILE_NAME)
     cursor = connection.cursor()
 
-    device_id_hash = device_id_hash = hash_device_id(device_id) # Make a hash of the device id for additional security
+    device_id_hash = hash_device_id(device_id) # Make a hash of the device id for additional security
 
     timestamp = int(time.time())  # Current UNIX timestamp
 
     cursor.execute("""
-        INSERT INTO Sessions (device_id_hash, keep_in_sleep, is_running, last_action, user_id) 
-        VALUES (?, ?, 1, ?, ?)
-    """, (device_id_hash, keep_in_sleep, timestamp, user_id))
+        INSERT INTO Sessions (device_id_hash, is_running, last_action, user_id) 
+        VALUES (?, ?, ?, ?)
+    """, (device_id_hash, True, timestamp, user_id))
 
     session_id = cursor.lastrowid  # Get the auto-incremented session ID
 
@@ -262,12 +261,12 @@ def update_last_action(session_id):
 
 def login_with_data(data):
     try:
-        username_or_email, password, device_id, keep_in_sleep = parse_args(data)
+        username_or_email, password, device_id = data["login"], data["password"],  data["device_id"]
         login_msg, user_id = login_client(username_or_email, password)
         is_success = login_msg == LOGIN_SUCCESS
         session_id = None
         if is_success:
-            session_id = start_session(user_id, device_id, keep_in_sleep)
+            session_id = start_session(user_id, device_id)
 
         return login_msg, session_id
     except Exception as e:
@@ -281,16 +280,17 @@ def login_with_old_session(data):
         connection = sqlite3.connect(DB_FILE_NAME)
         cursor = connection.cursor()
 
-        device_id = parse_args(data)[0]
+        device_id = data["device_id"]
 
         device_id_hash = hash_device_id(device_id)
 
         cursor.execute("SELECT id FROM Sessions WHERE device_id_hash = ?", (device_id_hash,))
-        result = cursor.fetchone()
+        result = cursor.fetchone()[0]
 
         # If the session was found, log the user in
         if result is not None:
-            return LOGIN_SUCCESS, result[0]
+            update_last_action(result)
+            return LOGIN_SUCCESS, result # Also save the session id for future reference
         # Else block the user from entering
         else:
             return LOGIN_FAIL + " - session was not found", None
@@ -300,9 +300,9 @@ def login_with_old_session(data):
         return "", None
 
 
-def add_request(data, session_id):
+def add_request(data, session_id, file_path=None):
     try:
-        song_name, artist_name, link, description, file_path = parse_args(data)
+        song_name, artist_name, link, description = data["name"], data["artist"], data["link"], data["description"]
         # Connect to the database
         connection = sqlite3.connect(DB_FILE_NAME)
         cursor = connection.cursor()
@@ -312,7 +312,7 @@ def add_request(data, session_id):
             with open(file_path, 'rb') as file:
                 blob_data = file.read()
         else:
-            blob_data = None
+            blob_data = b""
 
         # Retrieve the user id from the session
         cursor.execute("SELECT user_id FROM Sessions WHERE id = ?", (session_id,))

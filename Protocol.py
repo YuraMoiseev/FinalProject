@@ -1,6 +1,7 @@
 import socket
 from SecurityProtocol import *
 from DBProtocol import *
+import os
 
 def compare_melody(client_data, db_data):
     # will compare the entered melody to the melodies of some specific song in db
@@ -41,7 +42,9 @@ def create_request_msg(public_key, data) -> str:
     else:
         request = f"Non-supported cmd"
     request = encrypt_msg(public_key, request)
-    return f"{len(str(request)):0{HEADER_LEN}d}".encode(FORMAT) + DELIMITER  + request
+    # return f"{len(str(request)):0{HEADER_LEN}d}".encode(FORMAT) + DELIMITER  + request
+    return f"{len(request):0{HEADER_LEN}d}".encode(FORMAT) + DELIMITER  + request
+
 
 
 def create_response_msg(public_key, data) -> str:
@@ -49,32 +52,112 @@ def create_response_msg(public_key, data) -> str:
     response = encrypt_msg(public_key, data)
     if response is None:
         response = b''
-    return f"{len(str(response)):0{HEADER_LEN}d}".encode(FORMAT) + response
+    # return f"{len(str(response)):0{HEADER_LEN}d}".encode(FORMAT) + response
+    return f"{len(response):0{HEADER_LEN}d}".encode(FORMAT) + response
 
 
-def create_response(data, session_id=None): # Session id is kept in the client handler on the server side and thus cannot be obtained from client's message
+def create_response_and_execute_reaction(data, session_id, client_handler): # Session id is kept in the client handler on the server side and thus cannot be obtained from client's message
     """Create and a valid protocol message, will be sent by server, with length field"""
+
+    def handle_request_with_file():
+        file_name = None
+        if args["file"] != "":
+            write_to_log("[SERVER_BL] receiving file...")
+            # new file name is defined by how many files we have created
+            is_recv, file_name = receive_file(client_handler.client_socket, args["file"])
+            if not is_recv:
+                write_to_log("Error - file count not be transferred")
+        result = add_request(args, session_id, file_name)
+        os.remove(file_name)
+        return result
     cmd, args = parse_message(data)
-    if type(cmd) == bytes:
-        cmd = cmd.decode(FORMAT)
-    if type(args) == bytes:
-        args = args.decode(FORMAT)
+
+    # if type(cmd) == bytes:
+    #     cmd = cmd.decode(FORMAT)
+    # if type(args) == bytes:
+    #     args = args.decode(FORMAT)
+
+    args = parse_args(args)
     if check_cmd(data) == 1:
         response = REQUESTS_1[cmd]
     elif cmd == "Register":
         response = register_client(args)
     elif cmd == "Login_with_data":
-        response = login_with_data(args)
-    elif cmd == "Request":
-        response = add_request(args, session_id)
+        response, session = login_with_data(args)
+        client_handler.session = session
     elif cmd == "Login_with_session":
-        response = login_with_old_session(args)
+        response, session = login_with_old_session(args)
+        client_handler.session = session
+    elif cmd == "Request":
+        response = handle_request_with_file()
     elif cmd == "Delete_session":
         response = delete_session(session_id)
+        client_handler.session = None
     else:
-        response = "Non-supported cmd"
+        response = "Error: unknown request"
+    if response == "Bye!":
+        client_handler.connected = False
     return response
 
+
+def is_file_present(file_name: str) -> bool:
+    if not os.path.exists(file_name):
+        write_to_log(f"[PROTOCOL] - file does not exist: {file_name}")
+        return False
+    return True
+
+
+def get_complete_file_path(file_type, file_name, dir):
+    project_folder = os.getcwd()  # Get the project folder path
+    files_num = len(os.listdir(dir)) # Get the amount of files in a directory
+    file_path = os.path.join(project_folder, dir, f"{file_name}{files_num}.{file_type}")
+    return file_path # Return the true file path
+
+
+def receive_file(client_socket, file_type):
+    initial_timeout = client_socket.timeout
+    try:
+        client_socket.settimeout(1) # Set a bigger timeout to avoid transmission issues
+        file_name = get_complete_file_path(file_type, "file", "ServerFiles")
+        # Read the file size as a string until the newline character
+        file_size_bytes = b""
+        while not file_size_bytes.endswith(b"\n"):
+            chunk = client_socket.recv(1)
+            if not chunk:
+                write_to_log("[SERVER_BL] file transfer - failed to read file size from the client.")
+                return False, ""
+            file_size_bytes += chunk
+
+        # Convert the file size from string to integer
+        file_size = int(file_size_bytes.decode(FORMAT).strip())
+        if file_size == 0:
+            write_to_log("[SERVER_BL] file transfer - file size is 0, file not saved")
+            return True, file_name
+
+        bytes_received = 0
+        with open(file_name, 'wb') as f:
+            while bytes_received < file_size:
+                # Calculate remaining bytes to read
+                remaining_bytes = file_size - bytes_received
+                # If there are less remaining bytes than the general buffer size, choose a corresponding buffer size
+                bytes_to_read = min(BUFFER_SIZE, remaining_bytes)
+
+                # Read the next chunk
+                bytes_read = client_socket.recv(bytes_to_read)
+                if not bytes_read:
+                    # Unexpected disconnection
+                    write_to_log("[SERVER_BL] file transfer - connection lost before file transfer was complete.")
+                    return False, ""
+
+                # Write to file and update received byte count
+                f.write(bytes_read)
+                bytes_received += len(bytes_read)
+        client_socket.settimeout(initial_timeout)
+        return True, file_name
+    except Exception as e:
+        client_socket.settimeout(initial_timeout)
+        write_to_log(f"[PROTOCOL] exception file transfer - {e}")
+        return False, ""
 
 
 def receive_msg(my_socket: socket, private_key) -> (bool, str):
@@ -109,6 +192,15 @@ def receive_key(my_socket:socket):
         pem = my_socket.recv(length).decode(FORMAT).encode(FORMAT)
         key = load_pem_public_key(pem)
         return key
+
+
+def parse_args(data: str):
+    try:
+        # Convert the string representation of a dictionary back to a Python dictionary
+        dictionary = ast.literal_eval(data)
+        return dictionary
+    except Exception as e:
+        write_to_log(f"Exception on parsing arguments {e} on data {data}")
 
 
 REQUESTS_1 = {"Hello": "Hello!", "Find": best_matches, SEND_FILE_REQUEST: SEND_FILE_APPROVE,
