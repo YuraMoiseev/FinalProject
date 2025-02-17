@@ -1,8 +1,4 @@
 import threading
-import os
-
-from numba.scripts.generate_lower_listing import description
-
 from Protocol import *
 from CClientBL import CClientBL
 from PyQt5.QtWidgets import *
@@ -72,7 +68,7 @@ class CClientGUI(CClientBL, QMainWindow):
         self._client_socket = self.connect()
         if self._client_socket is not None:
             self.create_homepage_ui()
-            self.connected = False
+            self.connected = True
         else:
             self.create_error_wnd()
 
@@ -189,6 +185,7 @@ class CClientGUI(CClientBL, QMainWindow):
             pop_up = QPopUpWidget(POP_UP_LABEL1, POP_UP_LABEL2, self)
             if pop_up.exec_():
                 self.windows.append(MainWindow(parent_wnd=self))
+                self.hide()
             else:
                 self.safe_send(f"Delete_session")
                 self.windows.append(CLoginGUI(parent_wnd=self, client_object=self))
@@ -376,9 +373,9 @@ class MainWindow(QMainWindow):
 
         self._parent_wnd = parent_wnd
 
-        self._children_record_window = None
-        self._children_songs_window = None
-        self._children_requests_window = None
+        self.children_record_window = None
+        self.children_songs_window = None
+        self.children_requests_window = None
 
 
         self.label_welcome = None
@@ -417,12 +414,13 @@ class MainWindow(QMainWindow):
 
 
     def on_click_trace(self):
-        if self._children_record_window is None:
-            self._children_record_window = RecordWindow(self, self._parent_wnd)
+        if self.children_record_window is None:
+            self.children_record_window = RecordWindow(self, self._parent_wnd)
 
     def on_click_requests(self):
-        if self._children_requests_window is None:
-            self._children_requests_window = RequestWindow(self, self._parent_wnd)
+        if self.children_requests_window is None:
+            self.children_requests_window = RequestWindow(self, self._parent_wnd)
+
 
     def on_click_songs(self):
         print("Will be done later...")
@@ -433,6 +431,16 @@ class MainWindow(QMainWindow):
         write_to_log(result)
         self._parent_wnd.show()
         self.close()
+
+    def closeEvent(self, event):
+        if not self._parent_wnd.connected:
+            event.accept()
+        else:
+            self._parent_wnd.safe_send(DISCONNECT_MSG)
+            if self._parent_wnd.safe_receive() == "Bye!":
+                event.accept()
+            else:
+                event.ignore()
 
 
 class RecordWindow(QMainWindow):
@@ -490,6 +498,10 @@ class RecordWindow(QMainWindow):
 
     def _record(self):
         self._client_object.record_wav("recording.wav")
+        self._client_object.safe_send(SEND_FILE_REQUEST)
+        # result = self._client_object.safe_receive()
+        # print(result)
+        # if result == SEND_FILE_APPROVE:
         self._client_object.send_file("recording.wav")
         try:
             os.remove("recording.wav")
@@ -518,8 +530,8 @@ class RecordWindow(QMainWindow):
         self.close()
 
     def closeEvent(self, event):
-        self._parent_wnd._children_record_window = None
-        self.close()
+        self._parent_wnd.children_record_window = None
+        event.accept()
 
 
 class RequestWindow(QMainWindow):
@@ -637,16 +649,20 @@ class RequestWindow(QMainWindow):
             result = self._client_object.send_file(self.file_drop.chosen_file_path)
         else:
             result = self._client_object.safe_receive()
+        if type(result) == bool:
+            if result:
+                result = "Successfully sent"
+            else:
+                result = "Error"
         self.label_request_fail.setText(str(result))
         self.label_request_fail.show()
         for entry in self.entries:
             entry.setText("")
-        self.file_drop.chosen_file_path.handle_delete()
-
+        self.file_drop.handle_delete()
 
     def closeEvent(self, event):
-        self._parent_wnd._children_request_window = None
-        self.close()
+        self._parent_wnd.children_requests_window = None
+        event.accept()
 
 
 if __name__ == "__main__":

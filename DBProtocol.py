@@ -1,8 +1,6 @@
 import sqlite3
-import traceback
 from ConstantsAndLogging import *
 from SecurityProtocol import hash_password, verify_password, hash_device_id
-import ast
 import time
 
 
@@ -77,8 +75,9 @@ def create_requests_table():
         link TEXT,
         description TEXT,
         midi_audio_file BLOB,
-        requester_id INTEGER NOT NULL,
-        FOREIGN KEY (requester_id) REFERENCES Users (id) ON DELETE CASCADE ON UPDATE CASCADE
+        file_type TEXT,
+        requester TEXT NOT NULL,
+        FOREIGN KEY (requester) REFERENCES Users (login) ON DELETE CASCADE ON UPDATE CASCADE
     );
     ''')
     connection.commit()
@@ -165,6 +164,15 @@ def login_client(username_or_email, password):
         return LOGIN_FAIL, None
 
 
+def toggle_client_status(user_id, is_admin=True):
+    connection = sqlite3.connect(DB_FILE_NAME)
+    cursor = connection.cursor()
+    cursor.execute("UPDATE Users SET is_admin = ? WHERE id = ?",
+                   (is_admin, user_id))
+    connection.commit()
+    connection.close()
+
+
 def record_failed_attempt(user_id):
     connection = sqlite3.connect(DB_FILE_NAME)
     cursor = connection.cursor()
@@ -246,6 +254,33 @@ def delete_session(session_id):
         return "Fail"
 
 
+def handle_session_limit(session_id):
+    """Checks the last action of the session. Deletes if the time limit was exceeded, updates the last action if not"""
+    try:
+        connection = sqlite3.connect(DB_FILE_NAME)
+        cursor = connection.cursor()
+
+        timestamp = int(time.time())  # Current UNIX timestamp
+
+        cursor.execute("SELECT last_action, is_running FROM Sessions WHERE id = ?", (session_id,))
+        last_action, is_running = cursor.fetchone()
+        connection.commit()
+        connection.close()
+
+        time_window_seconds = 1800 + 1800 * 23 * int(is_running) # create a delta of how much time the session is available based off of if it's locked or not
+
+        if last_action + time_window_seconds < timestamp:
+            delete_session(session_id)
+            return False
+        else:
+            update_last_action(session_id)
+            return True
+
+    except Exception as e:
+        write_to_log(f"[DB_PROTOCOL] handling session failed due to the exception {e}")
+        return False
+
+
 def update_last_action(session_id):
     """Updates the last_action timestamp for a session."""
     connection = sqlite3.connect(DB_FILE_NAME)
@@ -271,7 +306,6 @@ def login_with_data(data):
         return login_msg, session_id
     except Exception as e:
         write_to_log(f"[DB_PROTOCOL] login with session failed due to the exception {e}")
-        # write_to_log(traceback.format_exc())
         return "", None
 
 
@@ -283,14 +317,20 @@ def login_with_old_session(data):
         device_id = data["device_id"]
 
         device_id_hash = hash_device_id(device_id)
-
-        cursor.execute("SELECT id FROM Sessions WHERE device_id_hash = ?", (device_id_hash,))
-        result = cursor.fetchone()[0]
-
-        # If the session was found, log the user in
+        cursor.execute("SELECT id, is_running FROM Sessions WHERE device_id_hash = ?", (device_id_hash,))
+        result = cursor.fetchone()
+        # If the session was found, and it has not expired, log the user in
         if result is not None:
-            update_last_action(result)
-            return LOGIN_SUCCESS, result # Also save the session id for future reference
+            session_id = result[0]
+            is_running = result[1]
+            if not is_running and handle_session_limit(session_id):
+                toggle_session_state(session_id, True)
+                update_last_action(session_id)
+                return LOGIN_SUCCESS, session_id # Also save the session id for future reference
+            elif is_running:
+                return LOGIN_FAIL + " - the session is already taken", None
+            else:
+                return LOGIN_FAIL + " - the session has expired", None
         # Else block the user from entering
         else:
             return LOGIN_FAIL + " - session was not found", None
@@ -300,13 +340,12 @@ def login_with_old_session(data):
         return "", None
 
 
-def add_request(data, session_id, file_path=None):
+def add_request(data, session_id, file_path=None, file_type=None):
     try:
         song_name, artist_name, link, description = data["name"], data["artist"], data["link"], data["description"]
         # Connect to the database
         connection = sqlite3.connect(DB_FILE_NAME)
         cursor = connection.cursor()
-
         if file_path is not None:
             # Read the file in binary mode
             with open(file_path, 'rb') as file:
@@ -317,11 +356,13 @@ def add_request(data, session_id, file_path=None):
         # Retrieve the user id from the session
         cursor.execute("SELECT user_id FROM Sessions WHERE id = ?", (session_id,))
         user_id = cursor.fetchone()[0]
+        cursor.execute("SELECT login FROM Users WHERE id = ?", (user_id,))
+        user_name = cursor.fetchone()[0]
         # Insert the data into the Requests table
         cursor.execute('''
-            INSERT INTO Requests (song_name, artist_name, link, description, requester_id, midi_audio_file)
-            VALUES (?, ?, ?, ?, ?, ?);
-            ''', (song_name, artist_name, link, description, user_id, blob_data))
+            INSERT INTO Requests (song_name, artist_name, link, description, requester, midi_audio_file, file_type)
+            VALUES (?, ?, ?, ?, ?, ?, ?);
+            ''', (song_name, artist_name, link, description, user_name, blob_data, file_type))
 
         connection.commit()
         connection.close()
@@ -331,8 +372,7 @@ def add_request(data, session_id, file_path=None):
         return "Fail"
 
 
-def add_song(data, user_id):
-    midi_file_path, song_name, artist_name = parse_args(data)
+def add_song(midi_file_path, song_name, artist_name, username):
     # Connect to the database
     connection = sqlite3.connect(DB_FILE_NAME)
     cursor = connection.cursor()
@@ -345,18 +385,26 @@ def add_song(data, user_id):
     cursor.execute('''
         INSERT INTO Songs (melodies, song_name, artist_name, added_by)
         VALUES (?, ?, ?, ?);
-        ''', (blob_data, song_name, artist_name, user_id))
+        ''', (blob_data, song_name, artist_name, username))
+
+    connection.commit()
+    connection.close()
+
+
+def toggle_session_state(session_id, is_running):
+    connection = sqlite3.connect(DB_FILE_NAME)
+    cursor = connection.cursor()
+
+    cursor.execute("UPDATE Sessions SET is_running = ? WHERE id = ?", (is_running, session_id))
 
     connection.commit()
     connection.close()
 
 
 def remove_request(request_id):
-    # Connect to the database
     connection = sqlite3.connect(DB_FILE_NAME)
     cursor = connection.cursor()
 
-    # Insert the data into the Songs table
     cursor.execute('''
             DELETE FROM Requests WHERE id = ?;
             ''', (request_id,))
@@ -365,11 +413,51 @@ def remove_request(request_id):
     connection.close()
 
 
-def parse_args(data: str):
-    # Convert the string representation of a dictionary back to a Python dictionary
-    dictionary = ast.literal_eval(data)
-    # Return the values as a tuple
-    return tuple(dictionary.values())
+def fetch_requests(offset, amount=10):
+    try:
+        connection = sqlite3.connect(DB_FILE_NAME)
+        cursor = connection.cursor()
+
+        cursor.execute('''
+                    SELECT id, song_name, artist_name, link, description, file_type, requester FROM Requests LIMIT ? OFFSET ?
+                    ''', (amount, offset))
+        rows = cursor.fetchall()
+
+
+        # Convert rows to a list of dictionaries for easier handling
+        columns = [desc[0] for desc in cursor.description]
+        result = [dict(zip(columns, row)) for row in rows]
+
+        connection.close()
+        return result
+    except Exception as e:
+        write_to_log(f"[DB_PROTOCOL] fetching requests failed due to the exception {e}")
+        return None
+
+
+def fetch_users(offset, amount=10):
+    try:
+        connection = sqlite3.connect(DB_FILE_NAME)
+        cursor = connection.cursor()
+
+        cursor.execute('''
+                    SELECT id, login, is_admin FROM Users LIMIT ? OFFSET ?
+                    ''', (amount, offset))
+        rows = cursor.fetchall()
+
+        # Convert rows to a list of dictionaries for easier handling
+        columns = [desc[0] for desc in cursor.description]
+        result = [dict(zip(columns, row)) for row in rows]
+
+        # Convert is_admin to bool
+        for user in result:
+            user['is_admin'] = bool(user['is_admin'])
+
+        connection.close()
+        return result
+    except Exception as e:
+        write_to_log(f"[DB_PROTOCOL] fetching users failed due to the exception {e}")
+        return None
 
 
 def verify_entry_validity(username: str, email: str, password: str):

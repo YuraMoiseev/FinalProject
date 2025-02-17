@@ -9,6 +9,8 @@ HEADER_LEN: int = 4
 FORMAT: str = 'utf-8'
 DISCONNECT_MSG: str = "EXIT"
 
+ip = "172.16.15.254"
+
 INVALID_CHARACTERS = [",", "{", "}"]
 REG_FAIL_USERNAME: str = "Username/Email is already taken"
 REG_SUCCESS: str = "User registered successfully"
@@ -70,6 +72,7 @@ LABEL_STYLE_SHEET: str = '''
     font: 14pt "Arial";
     border-radius: 15px;
     color: #00ff00; 
+    background-color: #000000
     '''
 
 ERROR_LABEL_STYLE_SHEET: str = '''
@@ -93,13 +96,44 @@ QLabel:hover
     }
 '''
 
+TABLE_STYLE_SHEET = """
+    QTableWidget {
+        background-color: #000000;
+        color: #00ff00; 
+    }
+    QHeaderView {
+        background-color: #000000;
+        color: #00ff00;
+    }
+    QHeaderView::section {
+        background-color: #000000;
+        color: #00ff00; 
+        padding: 4px;
+        border: 1px solid #00ff00;
+    }
+    QTableCornerButton::section {
+        background-color: #000000;
+        border: 1px solid #00ff00;
+    }
+"""
+
 DB_FILE_NAME = "DataBases.db"
 
 SECRET_KEY = b"Something_that_is_here_now_but_will_be_securely_stored_later"  # Keep this secret!
 
+REQUESTS_COLUMNS = {'Song Name':None, 'Artist':None, 'Link':None, 'Description':None, 'File Type':None, 'Requester':None}
+USERS_COLUMNS = {'id':None, 'login':None, 'is_admin':None}
+
+
 # prepare Log file
 LOG_FILE = 'LOG.log'
 logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+
+def literal_bool(boo:str):
+    if boo == "True" or boo == "1":
+        return True
+    return False
 
 
 def write_to_log(msg):

@@ -11,12 +11,12 @@ from fastdtw import fastdtw
 from scipy.spatial.distance import euclidean
 
 coef = 10
-TIMING_CONST = 24
-TIMING_WEIGHT = 0.001
-MELODY_WEIGHT = 1/coef - TIMING_WEIGHT
-PROGRESSION_WEIGHT = 1 - 1/coef
+TIMING_WEIGHT = 1
+MELODY_WEIGHT = 10
+PROGRESSION_WEIGHT = 1000
+GENERAL_WEIGHT = TIMING_WEIGHT + MELODY_WEIGHT + PROGRESSION_WEIGHT
 
-# TODO: compare by progression (up/down) with highest weight!!!
+
 class MidiAnalyzer:
 
     def __init__(self, midi):
@@ -190,7 +190,7 @@ class MidiAnalyzer:
 
     @staticmethod
     def similarity(distance: float):
-        return 100 / (1 + distance / 10000)
+        return 100 / (1 + distance / (GENERAL_WEIGHT*10000))
 
 
 class AudioAnalyzer:
@@ -332,6 +332,12 @@ class AudioAnalyzer:
         return right_frequencies, right_timestamps, left_frequencies, left_timestamps
 
 
+    def analyze_full(self, time_step=0.01, keep_stamps=True):
+        self.analyze_crepe(time_step, keep_stamps)
+        self.analyze_librosa(time_step, keep_stamps)
+        self.analyze_parselmouth(time_step, keep_stamps)
+
+
     def update_midi_file(self, timestamps, pitch_values, lower_limit, upper_limit, track_name=None):
 
         lower_freq = AudioAnalyzer._note_frequencies()[lower_limit]
@@ -408,6 +414,16 @@ class AudioAnalyzer:
         # Save MIDI file in the "Midi" folder
         midi_path = os.path.join(midi_folder, midi_file_name)
         self.midi_object.save(midi_path)
+
+
+    def split_into_tracks(self):
+        # Get the file type
+        file_type = self.file_path.split(".")[-1]
+        # Command to run Demucs
+        command = f"demucs --{file_type} {self.file_path}"
+
+        # Execute the command
+        os.system(command)
 
 
 #-----------------------------

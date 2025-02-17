@@ -1,6 +1,8 @@
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import  Qt, QPoint
+from DBProtocol import fetch_requests, fetch_users
 from ConstantsAndLogging import *
+
 
 class QFileDropWidget(QWidget):
     """
@@ -170,8 +172,98 @@ class QPopUpWidget(QDialog):
             self.label_error.show()
 
 
+# TODO: create file downloading (file send request by clicking the corresponding button)
+class QRequestsTable(QWidget):
+    def __init__(self, column_names_and_callbacks, fetch_rows_callback, field_callbacks=None, limit=3):
+        super().__init__()
+        self.offset = 0
+        self.limit = limit
+        self.column_names_and_callbacks = column_names_and_callbacks
+        self.table = None
+        self.load_more_button = None
+        self.fetch_rows_callback = fetch_rows_callback
+        self.create_ui()
+
+    def create_ui(self):
+        self.setWindowTitle('Requests Table')
+        self.setFixedSize(950, 400)
+        self.setStyleSheet(LABEL_STYLE_SHEET)
+
+        # Create a table widget
+        self.table = ClickableTableWidget(self)
+        self.table.setColumnCount(len(self.column_names_and_callbacks))
+        self.table.setHorizontalHeaderLabels(self.column_names_and_callbacks.keys())
+        self.table.setStyleSheet(TABLE_STYLE_SHEET)
+
+        # Create a "Load More" button
+        self.load_more_button = QPushButton('Load More', self)
+        self.load_more_button.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.load_more_button.clicked.connect(self.load_data)
+
+        # Layout
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.table)
+        layout.addWidget(self.load_more_button)
+        self.setLayout(layout)
+
+        # Load initial data
+        self.load_data()
+
+    def load_data(self):
+        # Fetch data from the database
+        data = self.fetch_rows_callback(self.offset, self.limit)
+
+        # Extend the table
+        self.table.setRowCount(self.offset + len(data))
+        # Loop through the dictionaries and load the data into the table
+        for row_idx, row_data in enumerate(data):
+            for col_idx, col_name in enumerate(row_data.keys()):
+                value = row_data.get(col_name, '')  # Get the original value
+                # Get the processing function for this column
+                processing_function = self.column_names_and_callbacks[col_name]
+                field = QCallableTableWidgetItem(str(value), processing_function)
+                self.table.setItem(row_idx + self.offset, col_idx, field)
+                field.setBackground(Qt.black)
+
+        # Update the offset for the next load
+        self.offset += len(data)
+
+    def item(self, x, y):
+        return self.table.item(x, y).data
+
+    def setItemValue(self, x, y, val):
+        table_item = self.table.item(x, y)
+        table_item.set_data(str(val))
+
+
+class ClickableTableWidget(QTableWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+
+    def mousePressEvent(self, event):
+        item = self.itemAt(event.pos())
+        if item is not None and isinstance(item, QCallableTableWidgetItem):
+            # write_to_log(f"Triggered mouse press event on item {item.row()}, {item.column()}")
+            if callable(item.callback):
+                item.callback(item.row(), item.column())
+        super().mousePressEvent(event)
+
+
+class QCallableTableWidgetItem(QTableWidgetItem):
+    def __init__(self, data: str, callback=None):
+        super().__init__(data)
+        self.data = data
+        self.callback = callback
+
+    def set_data(self, data):
+        self.data = data
+        self.setText(self.data)
+
+
 if __name__ == "__main__":
     app = QApplication([])
-    window = QPopUpWidget()
+    # window = QPopUpWidget()
+    window = QRequestsTable(USERS_COLUMNS, fetch_users)
     window.show()
     app.exec()

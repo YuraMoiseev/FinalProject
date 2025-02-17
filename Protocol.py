@@ -2,6 +2,7 @@ import socket
 from SecurityProtocol import *
 from DBProtocol import *
 import os
+import ast
 
 def compare_melody(client_data, db_data):
     # will compare the entered melody to the melodies of some specific song in db
@@ -61,25 +62,34 @@ def create_response_and_execute_reaction(data, session_id, client_handler): # Se
 
     def handle_request_with_file():
         file_name = None
+        file_type = None
         if args["file"] != "":
             write_to_log("[SERVER_BL] receiving file...")
-            # new file name is defined by how many files we have created
+            # new file name is defined by how many files have been created
             is_recv, file_name = receive_file(client_handler.client_socket, args["file"])
+            file_type = file_name.split(".")[-1]
             if not is_recv:
                 write_to_log("Error - file count not be transferred")
-        result = add_request(args, session_id, file_name)
-        os.remove(file_name)
+        result = add_request(args, session_id, file_name, file_type)
+        if args["file"] != "":
+            os.remove(file_name)
         return result
+
+    def handle_wav_file():
+        if response == SEND_FILE_APPROVE:
+            write_to_log("[SERVER_BL] receiving file...")
+            is_recv, file_name = receive_file(client_handler.client_socket, "wav")
+            if not is_recv:
+                write_to_log("Error - file count not be transferred")
+        elif response == SEND_FILE_FAIL:
+            write_to_log("Error - file transferred refused")
+
     cmd, args = parse_message(data)
-
-    # if type(cmd) == bytes:
-    #     cmd = cmd.decode(FORMAT)
-    # if type(args) == bytes:
-    #     args = args.decode(FORMAT)
-
-    args = parse_args(args)
+    if args is not None:
+        args = parse_args(args)
     if check_cmd(data) == 1:
         response = REQUESTS_1[cmd]
+        handle_wav_file()
     elif cmd == "Register":
         response = register_client(args)
     elif cmd == "Login_with_data":
@@ -97,6 +107,7 @@ def create_response_and_execute_reaction(data, session_id, client_handler): # Se
         response = "Error: unknown request"
     if response == "Bye!":
         client_handler.connected = False
+        toggle_session_state(session_id, False)
     return response
 
 
@@ -116,24 +127,25 @@ def get_complete_file_path(file_type, file_name, dir):
 
 def receive_file(client_socket, file_type):
     initial_timeout = client_socket.timeout
+    print(0)
     try:
-        client_socket.settimeout(1) # Set a bigger timeout to avoid transmission issues
+        client_socket.settimeout(None) # Set a bigger timeout to avoid transmission issues
         file_name = get_complete_file_path(file_type, "file", "ServerFiles")
         # Read the file size as a string until the newline character
         file_size_bytes = b""
         while not file_size_bytes.endswith(b"\n"):
             chunk = client_socket.recv(1)
             if not chunk:
-                write_to_log("[SERVER_BL] file transfer - failed to read file size from the client.")
+                write_to_log("[PROTOCOL] file transfer - failed to read file size from the client.")
                 return False, ""
             file_size_bytes += chunk
-
+        print(1)
         # Convert the file size from string to integer
         file_size = int(file_size_bytes.decode(FORMAT).strip())
         if file_size == 0:
-            write_to_log("[SERVER_BL] file transfer - file size is 0, file not saved")
+            write_to_log("[PROTOCOL] file transfer - file size is 0, file not saved")
             return True, file_name
-
+        print(2)
         bytes_received = 0
         with open(file_name, 'wb') as f:
             while bytes_received < file_size:
@@ -146,12 +158,13 @@ def receive_file(client_socket, file_type):
                 bytes_read = client_socket.recv(bytes_to_read)
                 if not bytes_read:
                     # Unexpected disconnection
-                    write_to_log("[SERVER_BL] file transfer - connection lost before file transfer was complete.")
+                    write_to_log("[PROTOCOL] file transfer - connection lost before file transfer was complete.")
                     return False, ""
 
                 # Write to file and update received byte count
                 f.write(bytes_read)
                 bytes_received += len(bytes_read)
+        print(3)
         client_socket.settimeout(initial_timeout)
         return True, file_name
     except Exception as e:
