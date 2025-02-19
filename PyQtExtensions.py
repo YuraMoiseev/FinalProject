@@ -174,7 +174,7 @@ class QPopUpWidget(QDialog):
 
 # TODO: create file downloading (file send request by clicking the corresponding button)
 class QRequestsTable(QWidget):
-    def __init__(self, column_names_and_callbacks, fetch_rows_callback, field_callbacks=None, limit=3):
+    def __init__(self, column_names_and_callbacks, fetch_rows_callback, field_callbacks=None, limit=10):
         super().__init__()
         self.offset = 0
         self.limit = limit
@@ -186,7 +186,7 @@ class QRequestsTable(QWidget):
 
     def create_ui(self):
         self.setWindowTitle('Requests Table')
-        self.setFixedSize(950, 400)
+        self.setFixedSize(250 + len(self.column_names_and_callbacks)*150, 450)
         self.setStyleSheet(LABEL_STYLE_SHEET)
 
         # Create a table widget
@@ -194,10 +194,12 @@ class QRequestsTable(QWidget):
         self.table.setColumnCount(len(self.column_names_and_callbacks))
         self.table.setHorizontalHeaderLabels(self.column_names_and_callbacks.keys())
         self.table.setStyleSheet(TABLE_STYLE_SHEET)
+        self.table.setFixedSize(len(self.column_names_and_callbacks)*140, 450)
 
         # Create a "Load More" button
         self.load_more_button = QPushButton('Load More', self)
         self.load_more_button.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.load_more_button.setFixedSize(250, 40)
         self.load_more_button.clicked.connect(self.load_data)
 
         # Layout
@@ -218,15 +220,36 @@ class QRequestsTable(QWidget):
         # Loop through the dictionaries and load the data into the table
         for row_idx, row_data in enumerate(data):
             for col_idx, col_name in enumerate(row_data.keys()):
-                value = row_data.get(col_name, '')  # Get the original value
+                value = row_data[col_name]
                 # Get the processing function for this column
-                processing_function = self.column_names_and_callbacks[col_name]
+                processing_function = list(self.column_names_and_callbacks.values())[col_idx]
                 field = QCallableTableWidgetItem(str(value), processing_function)
                 self.table.setItem(row_idx + self.offset, col_idx, field)
                 field.setBackground(Qt.black)
 
+            for col_idx in range(len(row_data), len(self.column_names_and_callbacks)):
+                value = ""
+                processing_function = list(self.column_names_and_callbacks.values())[col_idx]
+                # Get the processing function for this column
+                field = QCallableTableWidgetItem(str(value), processing_function)
+                self.table.setItem(row_idx + self.offset, col_idx, field)
+                field.setBackground(Qt.black)
+
+
         # Update the offset for the next load
         self.offset += len(data)
+
+    def removeRow(self, row):
+        self.table.removeRow(row)
+
+    def getRowData(self, row):
+        row_data = [self.table.item(row, column).data for column in range(len(self.column_names_and_callbacks))]
+        return row_data
+
+    def updateRowData(self, row, updated_data):
+        for item_idx, item in enumerate(updated_data):
+            self.setItemValue(row, item_idx, item)
+
 
     def item(self, x, y):
         return self.table.item(x, y).data
@@ -244,7 +267,7 @@ class ClickableTableWidget(QTableWidget):
     def mousePressEvent(self, event):
         item = self.itemAt(event.pos())
         if item is not None and isinstance(item, QCallableTableWidgetItem):
-            # write_to_log(f"Triggered mouse press event on item {item.row()}, {item.column()}")
+            write_to_log(f"Triggered mouse press event on item {item.row()}, {item.column()}")
             if callable(item.callback):
                 item.callback(item.row(), item.column())
         super().mousePressEvent(event)

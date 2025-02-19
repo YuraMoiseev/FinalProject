@@ -1,4 +1,5 @@
 import sqlite3
+
 from ConstantsAndLogging import *
 from SecurityProtocol import hash_password, verify_password, hash_device_id
 import time
@@ -22,7 +23,9 @@ def create_users_table():
         is_admin BOOLEAN NOT NULL,
         login TEXT UNIQUE NOT NULL,
         email TEXT UNIQUE NOT NULL,
-        hashed_password TEXT NOT NULL
+        hashed_password TEXT NOT NULL,
+        successful_additions INTEGER NOT NULL,
+        failed_additions INTEGER NOT NULL
     );
     ''')
     connection.commit()
@@ -47,18 +50,31 @@ def create_login_table():
 
 
 def create_songs_table():
-    # Create songs table in DB
     connection = sqlite3.connect(DB_FILE_NAME)
     cursor = connection.cursor()
+    # Create songs table in DB
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS Songs (
         id INTEGER PRIMARY KEY,
         melodies BLOB,
         song_name TEXT NOT NULL,
         added_by INTEGER NOT NULL,
-        FOREIGN KEY (added_by) REFERENCES Users (id) ON DELETE CASCADE ON UPDATE CASCADE
+        FOREIGN KEY (added_by) REFERENCES Users (id) ON UPDATE CASCADE
     );
     ''')
+
+    # Create a trigger to set added_by to -1 when a user is deleted
+    cursor.execute('''
+        CREATE TRIGGER IF NOT EXISTS before_user_delete
+        BEFORE DELETE ON Users
+        FOR EACH ROW
+        BEGIN
+            UPDATE Songs
+            SET added_by = -1
+            WHERE added_by = OLD.id;
+        END;
+        ''')
+
     connection.commit()
     connection.close()
 
@@ -121,7 +137,7 @@ def register_client(data):
             connection.close()
             return REG_FAIL_USERNAME
         cursor.execute(
-            'INSERT INTO Users (is_admin, login, email, hashed_password) VALUES (?, ?, ?, ?)',
+            'INSERT INTO Users (is_admin, login, email, hashed_password, successful_additions, failed_additions) VALUES (?, ?, ?, ?, 0, 0)',
             (False, username, email, hashed_password)
         )
         connection.commit()
@@ -372,6 +388,64 @@ def add_request(data, session_id, file_path=None, file_type=None):
         return "Fail"
 
 
+def update_request(data, file_path=None, file_type=None):
+    try:
+        song_name, artist_name, link, description, request_id = data["name"], data["artist"], data["link"], data["description"], data["id"]
+        # Connect to the database
+        connection = sqlite3.connect(DB_FILE_NAME)
+        cursor = connection.cursor()
+        if file_path is not None:
+            # Read the file in binary mode
+            with open(file_path, 'rb') as file:
+                blob_data = file.read()
+        else:
+            blob_data = b""
+
+        # Insert the data into the Requests table
+        cursor.execute('''
+            UPDATE Requests 
+            SET song_name = ?, artist_name = ?, link = ?, description = ?, midi_audio_file = ?, file_type = ? 
+            WHERE id = ?;
+            ''', (song_name, artist_name, link, description, blob_data, file_type, request_id))
+
+        connection.commit()
+        connection.close()
+        return "Success"
+    except Exception as e:
+        write_to_log(f"[DB_PROTOCOL] add request failed due to the exception {e}")
+        return "Fail"
+
+
+def extract_file(table_name, file_path, row_id, column_file_name, column_file_type):
+    try:
+        connection = sqlite3.connect(DB_FILE_NAME)
+        cursor = connection.cursor()
+        query = f"SELECT {column_file_name}, {column_file_type} FROM {table_name} WHERE id = ?"
+        cursor.execute(query, (row_id,))
+        # Fetch the BLOB data and file type
+        result = cursor.fetchone()
+        connection.close()
+        if not result:
+            write_to_log(f"No data found for row ID {row_id} in table {table_name}.")
+            return False
+
+        blob_data, file_type = result
+        if not blob_data:
+            write_to_log(f"No BLOB data found for row ID {row_id} in table {table_name}.")
+            return False
+
+        # Save the BLOB data to the specified file path
+        if file_path:
+            with open(file_path, 'wb') as file:
+                file.write(blob_data)
+            return True
+        else:
+            return False
+
+    except Exception as e:
+        write_to_log(f"[DB_PROTOCOL] file extract failed due to the exception {e}")
+
+
 def add_song(midi_file_path, song_name, artist_name, username):
     # Connect to the database
     connection = sqlite3.connect(DB_FILE_NAME)
@@ -401,7 +475,7 @@ def toggle_session_state(session_id, is_running):
     connection.close()
 
 
-def remove_request(request_id):
+def delete_request(request_id):
     connection = sqlite3.connect(DB_FILE_NAME)
     cursor = connection.cursor()
 

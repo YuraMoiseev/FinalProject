@@ -430,7 +430,7 @@ class MainWindow(QMainWindow):
         result = self._parent_wnd.safe_receive()
         write_to_log(result)
         self._parent_wnd.show()
-        self.close()
+        self.hide()
 
     def closeEvent(self, event):
         if not self._parent_wnd.connected:

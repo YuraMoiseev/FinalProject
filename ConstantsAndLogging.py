@@ -16,6 +16,7 @@ REG_FAIL_USERNAME: str = "Username/Email is already taken"
 REG_SUCCESS: str = "User registered successfully"
 LOGIN_FAIL: str = "Login failed"
 LOGIN_SUCCESS: str = "Login successful"
+LOGOUT_MSG: str = "Logout"
 
 REG_MSG: str = "Registration request received"
 SEND_FILE_REQUEST: str = "Song"
@@ -121,19 +122,19 @@ DB_FILE_NAME = "DataBases.db"
 
 SECRET_KEY = b"Something_that_is_here_now_but_will_be_securely_stored_later"  # Keep this secret!
 
-REQUESTS_COLUMNS = {'Song Name':None, 'Artist':None, 'Link':None, 'Description':None, 'File Type':None, 'Requester':None}
-USERS_COLUMNS = {'id':None, 'login':None, 'is_admin':None}
-
-
-# prepare Log file
-LOG_FILE = 'LOG.log'
-logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+REQUESTS_COLUMNS = {'Id': None, 'Song Name':None, 'Artist':None, 'Link':None, 'Description':None, 'File Type':None, 'Requester':None, 'Reject':None, 'Accept':None}
+USERS_COLUMNS = {'Id':None, 'Username':None, 'Admin':None}
 
 
 def literal_bool(boo:str):
     if boo == "True" or boo == "1":
         return True
     return False
+
+
+# prepare Log file
+LOG_FILE = 'LOG.log'
+logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 def write_to_log(msg):
