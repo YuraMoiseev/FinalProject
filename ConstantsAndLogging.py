@@ -19,14 +19,16 @@ LOGIN_SUCCESS: str = "Login successful"
 LOGOUT_MSG: str = "Logout"
 
 REG_MSG: str = "Registration request received"
-SEND_FILE_REQUEST: str = "Song"
-SEND_FILE_APPROVE: str = "Approve"
+SEARCH_SONG_REQUEST: str = "Song"
+SEARCH_SONG_APPROVE: str = "Approve"
 SEND_FILE_SUCCESS: str = "Wav file successfully transferred"
 SEND_FILE_FAIL: str = "Could not transfer wav file"
 
 POP_UP_LABEL1: str = "There has been found a session associated with your device. Do you want to log in via the existing session?"
 POP_UP_LABEL2: str = "Choose one of the options!"
 POP_UP_LABEL3: str = "Do you want to save the existing session to log into the account without having to enter user data?"
+
+ERROR_MSGS = ["Error", "error", "Server workflow terminated"]
 
 DELIMITER = b""
 

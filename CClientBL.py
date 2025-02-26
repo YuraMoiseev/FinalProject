@@ -50,10 +50,10 @@ class CClientBL:
 
     def send_data(self, msg: str) -> bool:
         try:
-            msg = create_request_msg(self.serv_public_key, msg)
-            message = msg#.encode(FORMAT)
+            message = create_request_msg(self.serv_public_key, msg)
             self._client_socket.send(message)
-            write_to_log(f"[CLIENT_BL] send {self._client_socket.getsockname()} {msg} ")
+            if msg != "Update":
+                write_to_log(f"[CLIENT_BL] send {self._client_socket.getsockname()} {msg} ")
             return True
         except Exception as e:
             write_to_log("[CLIENT_BL] Exception on send_data: {}".format(e))
@@ -83,7 +83,6 @@ class CClientBL:
         except Exception as e:
             write_to_log(f"Exception on selection audio device - {e}")
 
-
     def send_file(self, file_name: str) -> bool:
         try:
             # Get the size of the file
@@ -104,14 +103,12 @@ class CClientBL:
 
             # Log the file transfer
             write_to_log(f"[CLIENT_BL] sent {self._client_socket.getsockname()} wav file {file_name}")
-            write_to_log(f"[CLIENT_BL] received from [SERVER_BL] {self.receive_data()}")
             return True
 
         except Exception as e:
             write_to_log("[CLIENT_BL] Exception on send_wav: {}".format(e))
             self._client_socket.send(f"{0}\n".encode())
             self._client_socket.send(b"0")
-            write_to_log(f"[CLIENT_BL] received from [SERVER_BL] {self.receive_data()}")
             return False
 
     def record_wav(self, file_name: str = "recording.wav") -> bool:
@@ -121,7 +118,7 @@ class CClientBL:
             sample_format = pyaudio.paInt32  # 32 bits per sample
             channels = 1
             fs = 44100  # Record at 44100 samples per second
-            seconds = 10  # Record for 3 seconds
+            seconds = 3  # Record for 3 seconds
             p = pyaudio.PyAudio()  # Create an interface to PortAudio
 
             write_to_log('[CLIENT_BL] Recording wav file')
@@ -166,7 +163,8 @@ class CClientBL:
         try:
             (bres, msg) = receive_msg(self._client_socket, self._private_key)
             if bres:
-                write_to_log(f"[CLIENT_BL] received {self._client_socket.getsockname()} {msg.decode(FORMAT)} ")
+                if msg.decode(FORMAT) != "All Good":
+                    write_to_log(f"[CLIENT_BL] received {self._client_socket.getsockname()} {msg.decode(FORMAT)} ")
                 return msg.decode(FORMAT)
             else:
                 write_to_log(f"[CLIENT_BL] error - {msg}")

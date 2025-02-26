@@ -120,7 +120,7 @@ class QFileDropWidget(QWidget):
 
 
 class QPopUpWidget(QDialog):
-    def __init__(self, labeltext1="This is a pop-up dialog", labeltext2="Choose one of the options!",  parent=None):
+    def __init__(self, labeltext1="This is a pop-up dialog", labeltext2="Choose one of the options!",  parent=None, buttons=(2, ["Yes", "No"])):
         super().__init__(parent)
 
         self.can_close = False
@@ -142,16 +142,17 @@ class QPopUpWidget(QDialog):
         self.layout.addWidget(self.label_error)
         self.label_error.hide()
 
-        self.button_yes = QPushButton("Yes")
-        self.button_no = QPushButton("No")
-        self.button_yes.setStyleSheet(BUTTON_STYLE_SHEET)
-        self.button_no.setStyleSheet(BUTTON_STYLE_SHEET)
-        self.button_yes.clicked.connect(self.on_click_positive)
-        self.button_no.clicked.connect(self.on_click_negative)
+        self.button_1 = QPushButton(buttons[1][0])
+        self.button_1.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.button_1.clicked.connect(self.on_click_positive)
 
+        self.layout.addWidget(self.button_1)
 
-        self.layout.addWidget(self.button_yes)
-        self.layout.addWidget(self.button_no)
+        if buttons[0] == 2:
+            self.button_2 = QPushButton(buttons[1][1])
+            self.button_2.setStyleSheet(BUTTON_STYLE_SHEET)
+            self.button_2.clicked.connect(self.on_click_negative)
+            self.layout.addWidget(self.button_2)
 
         self.setLayout(self.layout)
 

@@ -109,9 +109,10 @@ class CClientHandler(threading.Thread):
 
     def close_socket(self):
         self.connected = False
-        self.client_socket.send(
-            create_response_msg(self.client_public_key, create_response_and_execute_reaction(DISCONNECT_MSG, self.session, self))
-        )
+        if self.client_socket is not None:
+            self.client_socket.send(
+                create_response_msg(self.client_public_key, create_response_and_execute_reaction(DISCONNECT_MSG, self.session, self))
+            )
 
 
     # TODO: move to protocol with socket as an argument
@@ -167,7 +168,8 @@ class CClientHandler(threading.Thread):
             valid_msg, msg = receive_msg(self.client_socket, self._private_key)
             if valid_msg:
                 # 2. Save to log
-                write_to_log(f"[SERVER_BL] received from {self.address} - {msg}")
+                if msg != b'Update':
+                    write_to_log(f"[SERVER_BL] received from {self.address} - {msg}")
                 # 3. If valid command - create response
                 # 4. Create response
                 response = create_response_and_execute_reaction(msg, self.session, self)
@@ -176,7 +178,8 @@ class CClientHandler(threading.Thread):
                     self.callback(REGISTER_REQUEST, self.address, msg[4:])
                     write_to_log("[SERVER_BL] REGISTER_REQUEST invoked")
                 # 6. Save to log
-                write_to_log(f"[SERVER_BL] send - {response}")
+                if response != "All Good":
+                    write_to_log(f"[SERVER_BL] send - {response}")
                 # 7. Send response to the client
                 self.client_socket.send(create_response_msg(self.client_public_key, response))
             if msg == "Socket Timeout":

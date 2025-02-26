@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtCore import QPropertyAnimation, QSequentialAnimationGroup, QParallelAnimationGroup, QPoint
 from PyQt5 import uic
 from PyQtExtensions import QFileDropWidget, QPopUpWidget
+import ast
 
 
 class CConnectGUI(QMainWindow):
@@ -64,11 +65,15 @@ class CClientGUI(CClientBL, QMainWindow):
         self.buttons_anim = None
         self.window_anim = None
         self.connected = False
+        self.update_thread_lock = False
+        self.update_thread = None
 
         self._client_socket = self.connect()
         if self._client_socket is not None:
             self.create_homepage_ui()
             self.connected = True
+            self.update_thread = threading.Thread(target=self.update_check)
+            # self.update_thread.start()
         else:
             self.create_error_wnd()
 
@@ -206,6 +211,14 @@ class CClientGUI(CClientBL, QMainWindow):
             else:
                 event.ignore()
 
+    # constant checks if the client is still connected to the server
+    def update_check(self):
+        while self.connected and not self.update_thread_lock:
+            self.safe_send("Update")
+            self.safe_receive()
+            time.sleep(1)
+
+
     # terminates the workflow in case of an exception arising
     def safe_send(self, data):
         is_sent = self.send_data(data)
@@ -218,19 +231,21 @@ class CClientGUI(CClientBL, QMainWindow):
     # terminates the workflow in case of an exception arising
     def safe_receive(self):
         receive = self.receive_data()
-        if receive == "Server workflow terminated" or receive == "":
+        if any(substring in receive for substring in ERROR_MSGS):
             self.forced_termination()
         else:
             return receive
 
     # in case the connection is broken and termination is required
     def forced_termination(self):
-        for window in self.windows:
-            window.close()
-        self.windows.clear()
-        self._parent_wnd.client = CClientGUI(self._host, self._port, self._parent_wnd)
         self.connected = False
-        self.close()
+        pop_up = QPopUpWidget("An error occurred in the workflow. The application will be terminated", POP_UP_LABEL2, self, (1, ["OK"]))
+        if pop_up.exec_():
+            for window in self.windows:
+                window.close()
+            self.windows.clear()
+            self._parent_wnd.client = CClientGUI(self._host, self._port, self._parent_wnd)
+            self.close()
 
 
 class CLoginGUI(QDialog):
@@ -497,12 +512,26 @@ class RecordWindow(QMainWindow):
         self._client_object.select_audio_device(self.combo_box_devices.currentText())
 
     def _record(self):
+        self._client_object.update_thread_lock = True
         self._client_object.record_wav("recording.wav")
-        self._client_object.safe_send(SEND_FILE_REQUEST)
+        self.label_record.setText("Recording done. Sending data to the server...")
+        self._client_object.safe_send(SEARCH_SONG_REQUEST)
         # result = self._client_object.safe_receive()
         # print(result)
         # if result == SEND_FILE_APPROVE:
         self._client_object.send_file("recording.wav")
+        write_to_log(1)
+        result = ast.literal_eval(self._client_object.safe_receive())
+        write_to_log(2)
+        displayed_text = "Found songs \n"
+        for i in result:
+            displayed_text += f"{i[1]} by {i[2]} is {i[0]}% similar to your recording"
+        write_to_log(3)
+        pop_up = QPopUpWidget(displayed_text, POP_UP_LABEL2, self, (1, ["OK"]))
+        if pop_up.exec_():
+            self.close()
+        write_to_log(4)
+        self._client_object.update_thread_lock = False
         try:
             os.remove("recording.wav")
             write_to_log(f"File 'recording.wav' has been deleted successfully.")
@@ -510,7 +539,7 @@ class RecordWindow(QMainWindow):
             write_to_log(f"An error occurred: {e}")
         if not self._client_object.is_recording:
             return
-        self.label_record.setText("Recording done!")
+
         self._client_object.cond()
         # time.sleep(3)
         # self.label_record.setText("Record")
@@ -521,6 +550,7 @@ class RecordWindow(QMainWindow):
             self._client_object.cond()
             recording = threading.Thread(target=self._record)
             recording.start()
+
         else:
             self.label_record.setText("Record")
             self._client_object.cond()

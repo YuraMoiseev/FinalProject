@@ -1,8 +1,11 @@
 import socket
+
+from MusicalAnalysis import AudioAnalyzer, MidiAnalyzer
 from SecurityProtocol import *
 from DBProtocol import *
 import os
 import ast
+import traceback
 
 def compare_melody(client_data, db_data):
     # will compare the entered melody to the melodies of some specific song in db
@@ -75,21 +78,33 @@ def create_response_and_execute_reaction(data, session_id, client_handler): # Se
             os.remove(file_name)
         return result
 
-    def handle_wav_file():
-        if response == SEND_FILE_APPROVE:
-            write_to_log("[SERVER_BL] receiving file...")
-            is_recv, file_name = receive_file(client_handler.client_socket, "wav")
-            if not is_recv:
-                write_to_log("Error - file count not be transferred")
-        elif response == SEND_FILE_FAIL:
-            write_to_log("Error - file transferred refused")
+    def handle_song_search():
+        #try:
+        write_to_log("[SERVER_BL] receiving file...")
+        is_recv, file_name = receive_file(client_handler.client_socket, "wav")
+        if not is_recv:
+            write_to_log("Error - file count not be transferred")
+            return
+        songs = fetch_songs()
+        # write_to_log(f"[PROTOCOL] fetched songs: {list(songs.keys())}")
+        AA = AudioAnalyzer(file_name)
+        AA.analyze_full(time_step=0.1)
+        MA = MidiAnalyzer.load_from_audio_analyzer(AA)
+        res_best = MA.compare_to_db(songs)
+        # write_to_log(f"[PROTOCOL] 20 best songs are: {res_best}")
+        return f"{res_best}"
+        # except Exception as e:
+        #     write_to_log(f"Exception on handling song search: {e}")
+        #     return "Error"
 
     cmd, args = parse_message(data)
+    response = ""
     if args is not None:
         args = parse_args(args)
     if check_cmd(data) == 1:
         response = REQUESTS_1[cmd]
-        handle_wav_file()
+    elif cmd == SEARCH_SONG_REQUEST:
+        response = handle_song_search()
     elif cmd == "Register":
         response = register_client(args)
     elif cmd == "Login_with_data":
@@ -104,7 +119,7 @@ def create_response_and_execute_reaction(data, session_id, client_handler): # Se
         response = delete_session(session_id)
         client_handler.session = None
     else:
-        response = "Error: unknown request"
+        response = "Error"
     if response == "Bye!":
         client_handler.connected = False
         toggle_session_state(session_id, False)
@@ -216,10 +231,10 @@ def parse_args(data: str):
         write_to_log(f"Exception on parsing arguments {e} on data {data}")
 
 
-REQUESTS_1 = {"Hello": "Hello!", "Find": best_matches, SEND_FILE_REQUEST: SEND_FILE_APPROVE,
-              SEND_FILE_SUCCESS: SEND_FILE_SUCCESS, SEND_FILE_FAIL: SEND_FILE_FAIL, DISCONNECT_MSG: "Bye!"}
+REQUESTS_1 = {"Hello": "Hello!", "Find": best_matches,
+              SEND_FILE_SUCCESS: SEND_FILE_SUCCESS, SEND_FILE_FAIL: SEND_FILE_FAIL, DISCONNECT_MSG: "Bye!", "Update": "All Good"}
 
-REQUESTS_2 = ["Register", "Request", "Delete_session"]
+REQUESTS_2 = ["Register", "Request", "Delete_session", SEARCH_SONG_REQUEST]
 
 
 LOGIN_REQUESTS = ["Login_with_session", "Login_with_data"]

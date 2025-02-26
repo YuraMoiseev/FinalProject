@@ -535,6 +535,17 @@ def fetch_users(offset, amount=10):
         return None
 
 
+def fetch_songs(offset=0, amount=10):
+    connection = sqlite3.connect(DB_FILE_NAME)
+    cursor = connection.cursor()
+    cursor.execute('''
+                        SELECT song_name, artist_name, melodies FROM Songs LIMIT ? OFFSET ?
+                        ''', (amount, offset))
+    rows = cursor.fetchall()
+    result_dict = {(song_name, artist_name): blob_data for song_name, artist_name, blob_data in rows}
+    return result_dict
+
+
 def verify_entry_validity(username: str, email: str, password: str):
     if any(character in username for character in INVALID_CHARACTERS):
         return False, "Username is invalid - prohibited characters used"
@@ -545,3 +556,7 @@ def verify_entry_validity(username: str, email: str, password: str):
     if any(character in password for character in INVALID_CHARACTERS):
         return False, "Password is invalid - prohibited characters used"
     return True, ""
+
+
+if __name__ == "__main__":
+    s = fetch_songs()

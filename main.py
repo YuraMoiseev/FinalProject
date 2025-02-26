@@ -505,15 +505,28 @@ def separate_into_tracks(file_name):
     os.system(command)
 
 
+def count_lines_in_py_files(directory):
+    total_lines = 0
+
+    # Check if the directory exists
+    if not os.path.isdir(directory):
+        print(f"The directory '{directory}' does not exist.")
+        return
+
+    # Iterate over all files in the directory
+    for filename in os.listdir(directory):
+        if filename.endswith(".py"):
+            filepath = os.path.join(directory, filename)
+            with open(filepath, 'r', encoding='utf-8') as file:
+                lines = file.readlines()
+                total_lines += len(lines)
+                print(f"{filename}: {len(lines)} lines")
+
+    print(f"\nTotal lines of code in all .py files: {total_lines}")
+
+
 # Example usage
 # file_path = "MusicFiles/Audio/Dream Theater - The Best Of Times Isolated Guitar Solo (John Petrucci).mp3"
-data = {
-                "name": "self.name_entry.text()", "artist": "self.artist_entry.text()",
-                "link": None, "description": "",
-                "file": None
-                }
-data = {key:("" if value is None else value) for key, value in data.items() }
-print(data)
 
 
 file = "C:/Users/Ymois/Downloads/Kipelov.mp3"
@@ -555,7 +568,7 @@ def print_midi_info(midi_file_path):
 
 
 if __name__ == "__main__":
-    
+    count_lines_in_py_files("C:/Users/Ymois/PycharmProjects/FinalProject")
     pass
 
 # Min heap of melodies by difference

@@ -9,6 +9,8 @@ from scipy.io import wavfile
 # from pydub import AudioSegment
 from fastdtw import fastdtw
 from scipy.spatial.distance import euclidean
+import io
+import heapq
 
 coef = 10
 TIMING_WEIGHT = 1
@@ -33,6 +35,11 @@ class MidiAnalyzer:
         return cls(MidiFile(file_name, clip=True))
 
 
+    @classmethod
+    def load_from_audio_analyzer(cls, AA_object):
+        return cls(AA_object.midi_object)
+
+
     def check_validity(self):
         for track in self.midi.tracks:
             active_notes = {}
@@ -40,11 +47,13 @@ class MidiAnalyzer:
                 if hasattr(instance, "note"):
                     if instance.type == "note_off":
                         if instance.note not in active_notes:
-                            raise Exception("Exception on creating MidiAnalyzer - Invalid midi object")
+                            print(self.midi)
+                            raise Exception("Exception on creating MidiAnalyzer - Invalid midi object (note_off event on non-existing note)")
                         active_notes.pop(instance.note)
                     else:
                         if instance.note in active_notes:
-                            raise Exception("Exception on creating MidiAnalyzer - Invalid midi object")
+                            print(self.midi)
+                            raise Exception("Exception on creating MidiAnalyzer - Invalid midi object (note_on event on active note)")
                         active_notes[instance.note] = None
 
 
@@ -172,15 +181,15 @@ class MidiAnalyzer:
         return res
 
     def compare_midis(self, midi_object):
-        result = -1, -1, -1
+        result_distance = -1, -1, -1
         user_sequences = self.paired_sequences_song()
         song_sequences = midi_object.paired_sequences_song()
         for i in range(len(song_sequences)):
             for j in range(len(user_sequences)):
                 track_result = self._closest_sequences_2(user_sequences[j], song_sequences[i])
-                if (track_result[0] < result[0] and track_result[0]!=-1) or result[0] == -1:
-                    result = track_result[0], (i, j)
-        return result
+                if (track_result[0] < result_distance[0] and track_result[0]!=-1) or result_distance[0] == -1:
+                    result_distance = track_result[0], (i, j)
+        return result_distance
 
     @classmethod
     def compare_songs(cls, user_file, song_file):
@@ -191,6 +200,28 @@ class MidiAnalyzer:
     @staticmethod
     def similarity(distance: float):
         return 100 / (1 + distance / (GENERAL_WEIGHT*10000))
+
+    @classmethod
+    def load_midi_from_blob(cls, blob_data):
+        file_data = io.BytesIO(blob_data)
+        return cls(MidiFile(file=file_data, clip=True))
+
+    def compare_to_db(self, song_dict):
+        top_matches = []
+
+        for (name, artist), midi_blob in song_dict.items():
+            midi_object = MidiAnalyzer.load_midi_from_blob(midi_blob)
+            similarity = MidiAnalyzer.similarity(self.compare_midis(midi_object)[0])
+
+            # Push only if we have fewer than 20 results or the new distance is better
+            if len(top_matches) < 20:
+                heapq.heappush(top_matches, (similarity, name, artist))
+            else:
+                heapq.heappushpop(top_matches, (similarity, name, artist))
+
+        # Sort results by best (smallest) distance
+        return sorted(top_matches, key=lambda x: x[0])
+
 
 
 class AudioAnalyzer:
@@ -391,6 +422,7 @@ class AudioAnalyzer:
                 if last_note is None and restricted_note is not None:
                     track.append(Message('note_on', note=midi_note, velocity=64, time=round(delta_time)))
                     delta_time = 0
+                    last_true_note = restricted_note
                 last_note = restricted_note
 
             # Calculate delta time
