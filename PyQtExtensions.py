@@ -118,6 +118,7 @@ class QFileDropWidget(QWidget):
         else:
             return None # In case of cancel event, return None
 
+
 class QPopUpWidget(QDialog):
     def __init__(self, labeltext1="This is a pop-up dialog", labeltext2="Choose one of the options!",  parent=None):
         super().__init__(parent)

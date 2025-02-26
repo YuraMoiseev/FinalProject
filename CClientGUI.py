@@ -633,32 +633,33 @@ class RequestWindow(QMainWindow):
 
 
     def on_click_send_request(self):
-        file_type = ""
-        if self.file_drop.chosen_file_path is not None and is_file_present(self.file_drop.chosen_file_path):
-            file_type = self.file_drop.chosen_file_path.split(".")[-1]
+        if self.name_entry.text() != "":
+            file_type = ""
+            if self.file_drop.chosen_file_path is not None and is_file_present(self.file_drop.chosen_file_path):
+                file_type = self.file_drop.chosen_file_path.split(".")[-1]
 
-        data = {
+            data = {
                 "name": self.name_entry.text(), "artist": self.artist_entry.text(),
                 "link": self.link_entry.text(), "description": self.description_entry.text(),
                 "file": file_type
-                }
-        # data = {key:("" if value is None else value) for key, value in data.items()}
-        self._client_object.safe_send(f"Request>{data}")
-        write_to_log(f"Request>{data}")
-        if self.file_drop.chosen_file_path is not None:
-            result = self._client_object.send_file(self.file_drop.chosen_file_path)
-        else:
-            result = self._client_object.safe_receive()
-        if type(result) == bool:
-            if result:
-                result = "Successfully sent"
+            }
+            # data = {key:("" if value is None else value) for key, value in data.items()}
+            self._client_object.safe_send(f"Request>{data}")
+            write_to_log(f"Request>{data}")
+            if self.file_drop.chosen_file_path is not None:
+                result = self._client_object.send_file(self.file_drop.chosen_file_path)
             else:
-                result = "Error"
-        self.label_request_fail.setText(str(result))
-        self.label_request_fail.show()
-        for entry in self.entries:
-            entry.setText("")
-        self.file_drop.handle_delete()
+                result = self._client_object.safe_receive()
+            if type(result) == bool:
+                if result:
+                    result = "Successfully sent"
+                else:
+                    result = "Error"
+            self.label_request_fail.setText(str(result))
+            self.label_request_fail.show()
+            for entry in self.entries:
+                entry.setText("")
+            self.file_drop.handle_delete()
 
     def closeEvent(self, event):
         self._parent_wnd.children_requests_window = None

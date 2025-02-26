@@ -58,6 +58,7 @@ def create_songs_table():
         id INTEGER PRIMARY KEY,
         melodies BLOB,
         song_name TEXT NOT NULL,
+        artist_name TEXT NOT NULL,
         added_by INTEGER NOT NULL,
         FOREIGN KEY (added_by) REFERENCES Users (id) ON UPDATE CASCADE
     );

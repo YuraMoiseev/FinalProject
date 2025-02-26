@@ -1,6 +1,8 @@
 import threading
 import time
 import os
+
+from MusicalAnalysis import AudioAnalyzer
 from Protocol import *
 from CServerBL import CServerBL
 from PyQt5.QtWidgets import *
@@ -262,7 +264,8 @@ class CRequestsGUI(QMainWindow):
         headers_with_callbacks = REQUESTS_COLUMNS
         headers_with_callbacks["Id"] = self.update_request
         headers_with_callbacks["File Type"] = self.file_download
-        headers_with_callbacks["Reject"] = self.reject_request
+        headers_with_callbacks["Reject"] = self.delete_request
+        headers_with_callbacks["Accept"] = self.accept_request
         self.request_table = QRequestsTable(headers_with_callbacks, fetch_requests)
 
         # Add the custom label to the layout
@@ -283,7 +286,7 @@ class CRequestsGUI(QMainWindow):
         extract_file("Requests", file_path, request_id, "midi_audio_file", "file_type")
 
 
-    def reject_request(self, x, _):
+    def delete_request(self, x, _):
         request_id = self.request_table.item(x, 0)
         delete_request(request_id)
         self.request_table.removeRow(x)
@@ -294,9 +297,25 @@ class CRequestsGUI(QMainWindow):
         request_id = self.request_table.item(x, 0)
         file_type = self.request_table.item(x, 5)
         if file_type == "wav":
-            pass
+            path_wav = f"ServerFiles/Request_file_{request_id}_{int(time.time())}.wav"
+            extract_file("Requests", path_wav, request_id, "midi_audio_file", "file_type")
+            analyzer = AudioAnalyzer(path_wav)
+            analyzer.analyze_full(time_step=1)
+            os.remove(path_wav)
+            path_mid = analyzer.save_midi(f"Request_file_{request_id}_{int(time.time())}.mid")
+            song_name, artist_name, requester = self.request_table.item(x, 1), self.request_table.item(x, 2), self.request_table.item(x, 6)
+            add_song(path_mid, song_name, artist_name, requester)
+            os.remove(path_mid)
+            self.delete_request(x, _)
+
         elif file_type == "mid":
-            pass
+            path_wav = f"ServerFiles/Request_file_{request_id}_{int(time.time())}.mid"
+            song_name, artist_name, requester = self.request_table.item(x, 1), self.request_table.item(x, 2), self.request_table.item(x, 6)
+            extract_file("Requests", path_wav, request_id, "midi_audio_file", "file_type")
+            add_song(path_wav, song_name, artist_name, requester)
+            os.remove(path_wav)
+            self.delete_request(x, _)
+
         else:
             write_to_log("Invalid file type, could not accept request")
 

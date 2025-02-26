@@ -554,6 +554,10 @@ def print_midi_info(midi_file_path):
         print("\n" + "-" * 30 + "\n")
 
 
+if __name__ == "__main__":
+    
+    pass
+
 # Min heap of melodies by difference
 
 # notes = PresentNotes("Temp2.mid")
