@@ -1,5 +1,4 @@
 import librosa
-import numpy as np
 import matplotlib.pyplot as plt
 import parselmouth
 from mido import MetaMessage, Message, MidiFile, MidiTrack, bpm2tempo
@@ -11,10 +10,65 @@ from fastdtw import fastdtw
 from scipy.spatial.distance import euclidean
 import io
 import heapq
+import torch
+import torchcrepe
+import os
+import uuid
+import yt_dlp
+import torchaudio
+from demucs.pretrained import get_model
+from demucs.apply import apply_model
+from spleeter.separator import Separator
+import openunmix
+import soundfile as sf
+import numpy as np
+
+
+def get_complete_file_path(file_type, file_name, dir):
+    project_folder = os.getcwd()  # Get the project folder path
+    os.makedirs(dir, exist_ok=True)  # Ensure the directory exists
+    unique_id = uuid.uuid4().hex  # Generate a unique identifier
+    file_path = os.path.join(project_folder, dir, f"{file_name}_{unique_id}.{file_type}")
+    return file_path
+
+
+class AudioRecorder:
+    def __init__(self, format="wav"):
+        self.format = format
+        self.opts = {
+        'format': 'bestaudio/best',  # Download the best quality audio
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',  # Use FFmpeg to extract audio
+            'preferredcodec': self.format,      # Convert to WAV format
+            'preferredquality': '192',    # Set the audio quality
+        }],
+        'outtmpl': "",       # Output file name (without extension)
+        }
+        self.ydl = None
+
+    def download_audio(self, url):
+        print("Downloading audio from YouTube...")
+        try:
+            # Generate the output file path
+            output_path = get_complete_file_path(self.format, "Audio", "ServerFiles")
+
+            self.opts['outtmpl'] = output_path
+
+            self.ydl = yt_dlp.YoutubeDL(self.opts)
+
+            self.ydl.download([url])
+
+            print(f"Audio downloaded successfully to {output_path}")
+            return output_path
+
+        except Exception as e:
+            print(f"Failed to download audio: {e}")
+            return None
+
 
 coef = 10
 TIMING_WEIGHT = 1
-MELODY_WEIGHT = 10
+MELODY_WEIGHT = 100
 PROGRESSION_WEIGHT = 1000
 GENERAL_WEIGHT = TIMING_WEIGHT + MELODY_WEIGHT + PROGRESSION_WEIGHT
 
@@ -112,10 +166,12 @@ class MidiAnalyzer:
                         continue
                     if last_note is None:
                         last_note = note
-                    elif last_note > note:
-                        track.append(1)
                     elif last_note < note:
+                        track.append(1)
+                        last_note = note
+                    elif last_note > note:
                         track.append(-1)
+                        last_note = note
                     else:
                         track.append(0)
                 tracks.append(track)
@@ -158,11 +214,13 @@ class MidiAnalyzer:
     @staticmethod
     def _closest_sequences_2(track1, track2):
         sliding_window_length = len(track1[0])
+        # if any(not lst for lst in track1) or any(not lst for lst in track2):
+        #     return
         res = -1, -1
         for i in range(len(track2[0]) - sliding_window_length + 1):
             notes = (track1[0], track2[0][i:i + sliding_window_length])
             timings = (track1[1], track2[1][i:i + sliding_window_length])
-            progressions = (track1[2], track2[2][i:i + sliding_window_length])
+            progressions = (track1[2], track2[2][i:i + sliding_window_length-1])
 
             # print(notes)
             # print()
@@ -221,7 +279,6 @@ class MidiAnalyzer:
 
         # Sort results by best (smallest) distance
         return sorted(top_matches, key=lambda x: x[0])
-
 
 
 class AudioAnalyzer:
@@ -362,6 +419,17 @@ class AudioAnalyzer:
 
         return right_frequencies, right_timestamps, left_frequencies, left_timestamps
 
+    # 🔹 Function to analyze pitch with CREPE
+    def analyze_torchcrepe(self, audio_path):
+        print("Loading audio for pitch analysis...")
+        audio, sr = librosa.load(audio_path, sr=16000)  # CREPE prefers 16kHz
+        audio = torch.tensor(audio).unsqueeze(0)  # Convert to PyTorch tensor
+
+        print("Running pitch estimation with CREPE...")
+        pitch, _ = torchcrepe.predict(
+            audio, sr, hop_length=160, fmin=50, fmax=2000, model='full'
+        )
+
 
     def analyze_full(self, time_step=0.01, keep_stamps=True):
         self.analyze_crepe(time_step, keep_stamps)
@@ -453,14 +521,112 @@ class AudioAnalyzer:
         self.file_path = file_path
 
 
-    def split_into_tracks(self):
-        # Get the file type
-        file_type = self.file_path.split(".")[-1]
-        # Command to run Demucs
-        command = f"demucs --{file_type} {self.file_path}"
+class AudioSeparator:
+    def __init__(self, file_path, base_dir="Server_files"):
+        self.file_path = file_path
+        self.base_dir = base_dir
 
-        # Execute the command
-        os.system(command)
+        # Define instance-specific directories
+        self.demucs_dir = os.path.join(os.getcwd(), self.base_dir, "stems/demucs/")
+        self.spleeter_dir = os.path.join(os.getcwd(), self.base_dir, "stems/spleeter/")
+        self.openunmix_dir = os.path.join(os.getcwd(), self.base_dir, "stems/openunmix/")
+
+        self.create_dirs()
+
+    def create_dirs(self):
+        """Creates necessary directories if they do not exist."""
+        os.makedirs(self.demucs_dir, exist_ok=True)
+        os.makedirs(self.spleeter_dir, exist_ok=True)
+        os.makedirs(self.openunmix_dir, exist_ok=True)
+
+    def change_base_file(self, file_path):
+        """Change the base audio file for processing."""
+        self.file_path = file_path
+
+    def separate_demucs(self):
+        """Separate stems using Demucs and save them in the designated directory."""
+        print("Running Demucs...")
+
+        # Load the pre-trained HTDemucs model
+        model = get_model(name="htdemucs")
+
+        # Load the input audio
+        waveform, sample_rate = torchaudio.load(self.file_path)
+
+        # Convert to stereo if it's mono
+        if waveform.shape[0] == 1:
+            waveform = torch.cat([waveform, waveform], dim=0)  # Duplicate mono to stereo
+
+        # Perform separation
+        sources = apply_model(model, waveform[None, ...])  # Add batch dimension
+
+        # Save the core stems
+        stems = ["vocals", "drums", "bass", "other"]
+        for i, stem in enumerate(stems):
+            torchaudio.save(os.path.join(self.demucs_dir, f"{stem}.wav"), sources.squeeze()[i], sample_rate)
+
+        print(f"Demucs stems saved in {self.demucs_dir}")
+
+    def separate_spleeter(self):
+        """Separate additional stems using Spleeter (piano, synth, etc.)"""
+        print("Running Spleeter...")
+
+        # Path to "other" stem extracted by Demucs
+        input_audio = os.path.join(self.demucs_dir, "other.wav")
+
+        # Ensure the "other.wav" file exists
+        if not os.path.exists(input_audio):
+            print("Error: 'other.wav' from Demucs not found.")
+            return
+
+        # Initialize the Spleeter separator (4-stem mode)
+        separator = Separator("spleeter:4stems")
+
+        # Perform separation and store in a temporary output directory
+        temp_output = os.path.join(self.spleeter_dir, "temp_spleeter/")
+        os.makedirs(temp_output, exist_ok=True)
+        separator.separate_to_file(input_audio, temp_output)
+
+        # Move extracted files to self.spleeter_dir
+        for file in os.listdir(temp_output):
+            if file.endswith(".wav"):
+                os.rename(os.path.join(temp_output, file), os.path.join(self.spleeter_dir, file))
+
+        # Cleanup temp folder
+        os.rmdir(temp_output)
+
+        print(f"Spleeter stems saved in {self.spleeter_dir}")
+
+    def separate_openunmix(self):
+        """Separate guitar and other instruments using Open-Unmix."""
+        print("Running Open-Unmix...")
+
+        # Path to "other" stem extracted by Demucs
+        input_audio = os.path.join(self.demucs_dir, "other.wav")
+
+        # Ensure the "other.wav" file exists
+        if not os.path.exists(input_audio):
+            print("Error: 'other.wav' from Demucs not found.")
+            return
+
+        # Load Open-Unmix model
+        model = openunmix.predict.OpenUnmix(model_str="umxhq")
+
+        # Load the "other" stem
+        audio, rate = sf.read(input_audio)
+
+        # Convert audio to tensor format
+        audio_tensor = torch.tensor(audio.T, dtype=torch.float32)
+
+        # Perform separation
+        with torch.no_grad():
+            estimates = model(audio_tensor[None, ...])  # Add batch dimension
+
+        # Save the extracted guitar track
+        guitar_path = os.path.join(self.openunmix_dir, "guitar.wav")
+        sf.write(guitar_path, estimates[0].squeeze().numpy().T, rate)
+
+        print(f"Guitar stem extracted successfully and saved to {guitar_path}")
 
 
 #-----------------------------
@@ -473,17 +639,11 @@ class AudioAnalyzer:
 # AA.analyze_parselmouth(0.01)
 # AA.save_midi(midi_file)
 if __name__ == "__main__":
-    file_name = 'MusicFiles/Audio/MidiTestPiano.wav'
-    midi_file = 'MidiTestPianoDetected1.mid'
+    url = "https://www.youtube.com/watch?v=N9PNCCW7hvo"
+    AA = AudioRecorder()
+    file = AA.download_audio(url)
+    print(file)
 
-    midi1 = "MusicFiles/Midi/MidiTestPianoDetected1.mid"
-    midi2 = "MusicFiles/Midi/MidiTestPiano2.mid"
-    MA = MidiAnalyzer.load_file(midi1)
-    val = MA.compare_midis(MidiAnalyzer.load_file(midi2))
-    # val = MA.compare_midis(MA)
-
-    print(val)
-    print(str(MidiAnalyzer.similarity(val[0])) + "%")
 # best_distance, best_position = compare_melodies_2(midi2, midi1)
 # print(f"Best match found at position {best_position} with similarity {similarity(best_distance)}%")
 

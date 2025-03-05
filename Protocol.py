@@ -5,7 +5,7 @@ from SecurityProtocol import *
 from DBProtocol import *
 import os
 import ast
-import traceback
+import uuid
 
 def compare_melody(client_data, db_data):
     # will compare the entered melody to the melodies of some specific song in db
@@ -91,6 +91,7 @@ def create_response_and_execute_reaction(data, session_id, client_handler): # Se
         AA.analyze_full(time_step=0.1)
         MA = MidiAnalyzer.load_from_audio_analyzer(AA)
         res_best = MA.compare_to_db(songs)
+        os.remove(file_name)
         # write_to_log(f"[PROTOCOL] 20 best songs are: {res_best}")
         return f"{res_best}"
         # except Exception as e:
@@ -135,14 +136,14 @@ def is_file_present(file_name: str) -> bool:
 
 def get_complete_file_path(file_type, file_name, dir):
     project_folder = os.getcwd()  # Get the project folder path
-    files_num = len(os.listdir(dir)) # Get the amount of files in a directory
-    file_path = os.path.join(project_folder, dir, f"{file_name}{files_num}.{file_type}")
-    return file_path # Return the true file path
+    os.makedirs(dir, exist_ok=True)  # Ensure the directory exists
+    unique_id = uuid.uuid4().hex  # Generate a unique identifier
+    file_path = os.path.join(project_folder, dir, f"{file_name}_{unique_id}.{file_type}")
+    return file_path
 
 
 def receive_file(client_socket, file_type):
     initial_timeout = client_socket.timeout
-    print(0)
     try:
         client_socket.settimeout(None) # Set a bigger timeout to avoid transmission issues
         file_name = get_complete_file_path(file_type, "file", "ServerFiles")
@@ -154,13 +155,11 @@ def receive_file(client_socket, file_type):
                 write_to_log("[PROTOCOL] file transfer - failed to read file size from the client.")
                 return False, ""
             file_size_bytes += chunk
-        print(1)
         # Convert the file size from string to integer
         file_size = int(file_size_bytes.decode(FORMAT).strip())
         if file_size == 0:
             write_to_log("[PROTOCOL] file transfer - file size is 0, file not saved")
             return True, file_name
-        print(2)
         bytes_received = 0
         with open(file_name, 'wb') as f:
             while bytes_received < file_size:
@@ -179,7 +178,6 @@ def receive_file(client_socket, file_type):
                 # Write to file and update received byte count
                 f.write(bytes_read)
                 bytes_received += len(bytes_read)
-        print(3)
         client_socket.settimeout(initial_timeout)
         return True, file_name
     except Exception as e:

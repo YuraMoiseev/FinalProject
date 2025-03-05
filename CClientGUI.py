@@ -244,7 +244,7 @@ class CClientGUI(CClientBL, QMainWindow):
             for window in self.windows:
                 window.close()
             self.windows.clear()
-            self._parent_wnd.client = CClientGUI(self._host, self._port, self._parent_wnd)
+            self._parent_wnd.show()
             self.close()
 
 

@@ -1,6 +1,7 @@
 import sqlite3
 
 from ConstantsAndLogging import *
+from MusicalAnalysis import MidiAnalyzer
 from SecurityProtocol import hash_password, verify_password, hash_device_id
 import time
 
@@ -340,7 +341,7 @@ def login_with_old_session(data):
         if result is not None:
             session_id = result[0]
             is_running = result[1]
-            if not is_running and handle_session_limit(session_id):
+            if handle_session_limit(session_id):
                 toggle_session_state(session_id, True)
                 update_last_action(session_id)
                 return LOGIN_SUCCESS, session_id # Also save the session id for future reference
@@ -560,3 +561,8 @@ def verify_entry_validity(username: str, email: str, password: str):
 
 if __name__ == "__main__":
     s = fetch_songs()
+    file = list(s.values())[0]
+    MA = MidiAnalyzer.load_midi_from_blob(file)
+    # print(MA.note_sequence)
+    # print(MA.timing_sequence)
+    # print(MA.progression_sequence)

@@ -515,7 +515,7 @@ def count_lines_in_py_files(directory):
 
     # Iterate over all files in the directory
     for filename in os.listdir(directory):
-        if filename.endswith(".py"):
+        if filename.endswith(".py") and filename!= "main.py":
             filepath = os.path.join(directory, filename)
             with open(filepath, 'r', encoding='utf-8') as file:
                 lines = file.readlines()
@@ -529,8 +529,6 @@ def count_lines_in_py_files(directory):
 # file_path = "MusicFiles/Audio/Dream Theater - The Best Of Times Isolated Guitar Solo (John Petrucci).mp3"
 
 
-file = "C:/Users/Ymois/Downloads/Kipelov.mp3"
-separate_into_tracks(file)
 # # files
 # src = "MusicFiles/Audio/Dream Theater - The Best Of Times Isolated Guitar Solo (John Petrucci).mp3"
 # dst = "DT-The-Best-Of-Times-Solo.wav"
