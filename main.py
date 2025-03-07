@@ -566,8 +566,9 @@ def print_midi_info(midi_file_path):
 
 
 if __name__ == "__main__":
-    count_lines_in_py_files("C:/Users/Ymois/PycharmProjects/FinalProject")
+    # count_lines_in_py_files("C:/Users/Ymois/PycharmProjects/FinalProject")
     pass
+
 
 # Min heap of melodies by difference
 

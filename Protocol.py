@@ -50,7 +50,6 @@ def create_request_msg(public_key, data) -> str:
     return f"{len(request):0{HEADER_LEN}d}".encode(FORMAT) + DELIMITER  + request
 
 
-
 def create_response_msg(public_key, data) -> str:
     """Encrypt and make the given protocol response valid, will be sent by server, with length field"""
     response = encrypt_msg(public_key, data)

@@ -22,6 +22,17 @@ from spleeter.separator import Separator
 import openunmix
 import soundfile as sf
 import numpy as np
+from pytube import YouTube
+import re
+from pydub import AudioSegment
+from pydub.utils import make_chunks
+from ConstantsAndLogging import write_to_log
+
+coef = 10
+TIMING_WEIGHT = 1
+MELODY_WEIGHT = 100
+PROGRESSION_WEIGHT = 1000
+GENERAL_WEIGHT = TIMING_WEIGHT + MELODY_WEIGHT + PROGRESSION_WEIGHT
 
 
 def get_complete_file_path(file_type, file_name, dir):
@@ -32,7 +43,41 @@ def get_complete_file_path(file_type, file_name, dir):
     return file_path
 
 
-class AudioRecorder:
+def validate_url(url):
+    """
+    Validates if the URL is a valid YouTube link and checks if the video exists.
+
+    Args:
+        url (str): The URL to validate.
+
+    Returns:
+        bool: True if the URL is a valid YouTube link and the video exists, False otherwise.
+    """
+    # Check if the URL is a valid YouTube URL
+    youtube_regex = (
+        r'(https?://)?(www\.)?'
+        r'(youtube|youtu|youtube-nocookie)\.(com|be)/'
+        r'(watch\?v=|embed/|v/|.+\?v=)?([^&=%\?]{11})'
+    )
+
+    match = re.match(youtube_regex, url)
+    if not match:
+        return False  # Not a valid YouTube URL
+
+    # Extract the video ID
+    video_id = match.group(6)
+
+    # Check if the video exists using pytube
+    try:
+        yt = YouTube(f"https://www.youtube.com/watch?v={video_id}")
+        yt.check_availability()  # Raises an exception if the video is unavailable
+        return True
+    except Exception as e:
+        print(f"Error: {e}")
+        return False
+
+
+class AudioExtractor:
     def __init__(self, format="wav"):
         self.format = format
         self.opts = {
@@ -52,7 +97,7 @@ class AudioRecorder:
             # Generate the output file path
             output_path = get_complete_file_path(self.format, "Audio", "ServerFiles")
 
-            self.opts['outtmpl'] = output_path
+            self.opts['outtmpl'] = output_path[:-4]
 
             self.ydl = yt_dlp.YoutubeDL(self.opts)
 
@@ -64,13 +109,6 @@ class AudioRecorder:
         except Exception as e:
             print(f"Failed to download audio: {e}")
             return None
-
-
-coef = 10
-TIMING_WEIGHT = 1
-MELODY_WEIGHT = 100
-PROGRESSION_WEIGHT = 1000
-GENERAL_WEIGHT = TIMING_WEIGHT + MELODY_WEIGHT + PROGRESSION_WEIGHT
 
 
 class MidiAnalyzer:
@@ -282,30 +320,17 @@ class MidiAnalyzer:
 
 
 class AudioAnalyzer:
+    NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+    NOTE_TO_FREQ = {
+        'C0': 16.35, 'C1': 32.7, 'C2': 65.41, 'C3': 130.81, 'C4': 261.63,
+        'C5': 523.25, 'C6': 1046.50, 'C7': 2093, 'C8': 4186.01
+    }
 
     def __init__(self, file_path):
-
         self.file_path = file_path
         self.midi_object = MidiFile()
 
-    note_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-
-    # Convert note limits to frequencies
-    note_to_freq = {
-        'C0': 16.35, 'C1': 32.7, 'C2': 65.41, 'C3': 130.81, 'C4': 261.63, 'C5': 523.25, 'C6': 1046.50, 'C7': 2093,
-        'C8': 4186.01
-    }
-
-    @classmethod
-    def _note_names(cls):
-        return cls.note_names
-
-    @classmethod
-    def _note_frequencies(cls):
-        return cls.note_to_freq
-
     @staticmethod
-    # Function to map frequencies to the nearest note
     def frequency_to_note_name(frequency):
         if frequency <= 0:
             return None
@@ -314,10 +339,9 @@ class AudioAnalyzer:
         h = round(12 * np.log2(frequency / C0))
         octave = h // 12
         n = h % 12
-        return f"{AudioAnalyzer._note_names()[n]}{octave}"
+        return f"{AudioAnalyzer.NOTE_NAMES[n]}{octave}"
 
     @staticmethod
-    # Restrict note to a specific octave range (e.g., C3 to C4)
     def restrict_to_range(note):
         if note is None:
             return None
@@ -325,122 +349,74 @@ class AudioAnalyzer:
         target_octave = octave % 8
         return f"{note_name}{target_octave}"
 
-
     def analyze_parselmouth(self, time_step, keep_stamps=True):
-        # Parse the sound file
         sound = parselmouth.Sound(self.file_path)
         pitch = sound.to_pitch(time_step=time_step)
-
-        # Get pitch values and timestamps
         pitch_values = pitch.selected_array['frequency']
         timestamps = np.arange(len(pitch_values)) * pitch.time_step
-
         if keep_stamps:
             self.update_midi_file(timestamps, pitch_values, "C0", "C8")
-
         return pitch_values, timestamps
-
 
     def analyze_librosa(self, time_step, keep_stamps=True):
-        # Load the audio file
-        y, sr = librosa.load(self.file_path, sr=None)  # sr=None preserves the original sample rate
-
-        # Calculate the corresponding hop length
-        hop_length = int(time_step * sr)  # Convert time_step (in seconds) to samples
-
-        # Compute pitch using the piptrack function
+        y, sr = librosa.load(self.file_path, sr=None)
+        hop_length = int(time_step * sr)
         pitches, magnitudes = librosa.piptrack(y=y, sr=sr, hop_length=hop_length)
-
-        pitch_values = []
-        for i in range(pitches.shape[1]):  # Iterate over frames
-            pitch = pitches[:, i]
-            magnitude = magnitudes[:, i]
-            if magnitude.any():  # If there's significant magnitude
-                # Find the index of the maximum magnitude in the frame
-                max_idx = magnitude.argmax()
-                pitch_values.append(pitch[max_idx])
-
+        pitch_values = [pitches[:, i][magnitudes[:, i].argmax()] for i in range(pitches.shape[1]) if
+                        magnitudes[:, i].any()]
         timestamps = np.arange(len(pitch_values)) * time_step
-
         if keep_stamps:
             self.update_midi_file(timestamps, pitch_values, "C0", "C8")
-
         return pitch_values, timestamps
 
-
     def analyze_crepe(self, time_step, keep_stamps=True):
-
-        """
-            Analyze the pitch of the audio file using CREPE.
-
-            Parameters:
-                time_step (float): Time step in seconds for pitch analysis.
-                keep_stamps (bool): Whether to keep pitch values and timestamps lists in the memory of the object
-
-            Returns:
-                1) In case of mono audio: returns two lists, the first one containing pitch values at all given points in time, the second one containing matching timestamps, also return two None instances as placeholders
-                2) In case of stereo audio: returns four lists, first two containing pitch values and timestamps of the right channel, and third and fourth containing the same of the left channel
-            """
-
-        # Function to process one channel with CREPE
         def process_channel(channel_data):
-            time, frequency, confidence, activation = crepe.predict(
-                channel_data,
-                sample_rate,
-                step_size=int(time_step * 1000),  # Convert seconds to milliseconds
-                # model='full'  # Use the full model for better accuracy
-            )
-            # Filter out low-confidence results (e.g., confidence < 0.5)
+            time, frequency, confidence, _ = crepe.predict(channel_data, sample_rate, step_size=int(time_step * 1000))
             valid_indices = confidence >= 0.5
             return time[valid_indices], frequency[valid_indices]
 
-        # Read the audio file
         sample_rate, audio = wavfile.read(self.file_path)
-
-        # Check if the audio is mono or stereo, in the first case - analyze right away
         if len(audio.shape) != 2 or audio.shape[1] != 2:
             timestamps, frequencies = process_channel(audio)
             if keep_stamps:
                 self.update_midi_file(timestamps, frequencies, "C0", "C8")
-
-            return process_channel(audio)[1], process_channel(audio)[0], None, None
-
-        # Separate the left and right channels
-        left_channel = audio[:, 0]
-        right_channel = audio[:, 1]
-
-        # Analyze both channels
-        left_timestamps, left_frequencies = process_channel(left_channel)
-        right_timestamps, right_frequencies = process_channel(right_channel)
-
+            return frequencies, timestamps, None, None
+        left_timestamps, left_frequencies = process_channel(audio[:, 0])
+        right_timestamps, right_frequencies = process_channel(audio[:, 1])
         if keep_stamps:
             self.update_midi_file(right_timestamps, right_frequencies, "C0", "C8")
             self.update_midi_file(left_timestamps, left_frequencies, "C0", "C8")
-
         return right_frequencies, right_timestamps, left_frequencies, left_timestamps
 
-    # 🔹 Function to analyze pitch with CREPE
-    def analyze_torchcrepe(self, audio_path):
-        print("Loading audio for pitch analysis...")
-        audio, sr = librosa.load(audio_path, sr=16000)  # CREPE prefers 16kHz
-        audio = torch.tensor(audio).unsqueeze(0)  # Convert to PyTorch tensor
+    def analyze_torchcrepe(self, audio_path, time_step, keep_stamps=True):
+        audio, sr = librosa.load(audio_path, sr=16000)
+        audio = torch.tensor(audio).unsqueeze(0)
 
-        print("Running pitch estimation with CREPE...")
-        pitch, _ = torchcrepe.predict(
-            audio, sr, hop_length=160, fmin=50, fmax=2000, model='full'
-        )
+        # Compute hop length based on time_step
+        hop_length = int(time_step * sr)
 
+        # Run pitch prediction
+        pitches, _ = torchcrepe.predict(audio, sr, hop_length=hop_length, fmin=50, fmax=2000, model='full')
+
+        # Generate timestamps
+        timestamps = torch.arange(len(pitches)) * (hop_length / sr)
+
+        if keep_stamps:
+            self.update_midi_file(timestamps, pitches, "C0", "C8")
 
     def analyze_full(self, time_step=0.01, keep_stamps=True):
-        self.analyze_crepe(time_step, keep_stamps)
-        self.analyze_librosa(time_step, keep_stamps)
-        self.analyze_parselmouth(time_step, keep_stamps)
-
+        try:
+            self.analyze_crepe(time_step, keep_stamps)
+            self.analyze_librosa(time_step, keep_stamps)
+            self.analyze_parselmouth(time_step, keep_stamps)
+            # self.analyze_torchcrepe(time_step, keep_stamps)
+        except Exception as e:
+            write_to_log("Exception" + str(e))
 
     def update_midi_file(self, timestamps, pitch_values, lower_limit, upper_limit, track_name=None):
 
-        lower_freq = AudioAnalyzer._note_frequencies()[lower_limit]
-        upper_freq = AudioAnalyzer._note_frequencies()[upper_limit]
+        lower_freq = AudioAnalyzer.NOTE_NAMES[lower_limit]
+        upper_freq = AudioAnalyzer.NOTE_TO_FREQ[upper_limit]
 
         # Add a track with a name to the MIDI file
         track = MidiTrack()
@@ -457,7 +433,7 @@ class AudioAnalyzer:
         last_note = None
 
         delta_time = 0
-        last_true_note = None # The last note which is in the restricted range and is not silent
+        last_true_note = None  # The last note which is in the restricted range and is not silent
 
         for t, freq in zip(timestamps, pitch_values):
             # Handle silent or out-of-limits notes
@@ -469,12 +445,13 @@ class AudioAnalyzer:
                 restricted_note = self.restrict_to_range(note_name)
 
                 # Convert note name to MIDI note number
-                midi_note = AudioAnalyzer._note_names().index(restricted_note[:-1]) + (int(restricted_note[-1]) + 1) * 12
+                midi_note = AudioAnalyzer.NOTE_NAMES.index(restricted_note[:-1]) + (
+                            int(restricted_note[-1]) + 1) * 12
 
             if restricted_note != last_note:
                 # The current note is not silent and the previous also was not, open the current note and close the previous note
                 if last_note is not None and restricted_note is not None:
-                    midi_last_note = AudioAnalyzer._note_names().index(last_note[:-1]) + (int(last_note[-1]) + 1) * 12
+                    midi_last_note = AudioAnalyzer.NOTE_NAMES.index(last_note[:-1]) + (int(last_note[-1]) + 1) * 12
                     track.append(Message('note_off', note=midi_last_note, velocity=64, time=round(delta_time)))
                     delta_time = 0
                     track.append(Message('note_on', note=midi_note, velocity=64, time=round(delta_time)))
@@ -482,7 +459,7 @@ class AudioAnalyzer:
 
                 # The current note is silent and the previous was not, close the previous note
                 if last_note is not None and restricted_note is None:
-                    midi_last_note = AudioAnalyzer._note_names().index(last_note[:-1]) + (int(last_note[-1]) + 1) * 12
+                    midi_last_note = AudioAnalyzer.NOTE_NAMES.index(last_note[:-1]) + (int(last_note[-1]) + 1) * 12
                     track.append(Message('note_off', note=midi_last_note, velocity=64, time=round(delta_time)))
                     delta_time = 0
 
@@ -499,30 +476,24 @@ class AudioAnalyzer:
 
         # Close the last note
         if last_note is not None and last_true_note is not None:
-            midi_last_note = AudioAnalyzer._note_names().index(last_true_note[:-1]) + (int(last_true_note[-1]) + 1) * 12
+            midi_last_note = AudioAnalyzer.NOTE_NAMES.index(last_true_note[:-1]) + (int(last_true_note[-1]) + 1) * 12
             track.append(Message('note_off', note=midi_last_note, velocity=64, time=round(delta_time)))
 
         return self.midi_object
 
-
     def save_midi(self, midi_file_name):
-
-        project_folder = os.getcwd()  # Get the project folder path
-        midi_folder = os.path.join(project_folder, "MusicFiles", "Midi")
-        os.makedirs(midi_folder, exist_ok=True)  # Create directories if they don't exist
-
-        # Save MIDI file in the "Midi" folder
+        midi_folder = os.path.join(os.getcwd(), "MusicFiles", "Midi")
+        os.makedirs(midi_folder, exist_ok=True)
         midi_path = os.path.join(midi_folder, midi_file_name)
         self.midi_object.save(midi_path)
         return midi_path
-
 
     def change_base_file(self, file_path):
         self.file_path = file_path
 
 
 class AudioSeparator:
-    def __init__(self, file_path, base_dir="Server_files"):
+    def __init__(self, file_path, base_dir="ServerFiles"):
         self.file_path = file_path
         self.base_dir = base_dir
 
@@ -560,16 +531,31 @@ class AudioSeparator:
         # Perform separation
         sources = apply_model(model, waveform[None, ...])  # Add batch dimension
 
+        # Map stems to their correct indices in the sources tensor
+        stem_indices = {
+            "vocals": 3,
+            "drums": 0,
+            "bass": 1,
+            "other": 2
+        }
+
         # Save the core stems
-        stems = ["vocals", "drums", "bass", "other"]
-        for i, stem in enumerate(stems):
-            torchaudio.save(os.path.join(self.demucs_dir, f"{stem}.wav"), sources.squeeze()[i], sample_rate)
+        for stem, index in stem_indices.items():
+            file_path = os.path.join(self.demucs_dir, f"{stem}.wav")
+            torchaudio.save(file_path, sources.squeeze()[index], sample_rate)
 
         print(f"Demucs stems saved in {self.demucs_dir}")
 
+    @staticmethod
+    def split_audio(input_audio, chunk_length_ms=1000): # 10 sec chunks by default
+        """Split an audio file into smaller chunks."""
+        audio = AudioSegment.from_file(input_audio)
+        chunks = make_chunks(audio, chunk_length_ms)
+        return chunks
+
     def separate_spleeter(self):
-        """Separate additional stems using Spleeter (piano, synth, etc.)"""
-        print("Running Spleeter...")
+        """Separate additional stems using Spleeter (piano, synth, etc.) in batches."""
+        print("Running Spleeter in batches...")
 
         # Path to "other" stem extracted by Demucs
         input_audio = os.path.join(self.demucs_dir, "other.wav")
@@ -582,18 +568,33 @@ class AudioSeparator:
         # Initialize the Spleeter separator (4-stem mode)
         separator = Separator("spleeter:4stems")
 
-        # Perform separation and store in a temporary output directory
-        temp_output = os.path.join(self.spleeter_dir, "temp_spleeter/")
-        os.makedirs(temp_output, exist_ok=True)
-        separator.separate_to_file(input_audio, temp_output)
+        # Split the audio into chunks
+        chunks = self.split_audio(input_audio)
 
-        # Move extracted files to self.spleeter_dir
-        for file in os.listdir(temp_output):
-            if file.endswith(".wav"):
-                os.rename(os.path.join(temp_output, file), os.path.join(self.spleeter_dir, file))
+        # Process each chunk
+        for i, chunk in enumerate(chunks):
+            print(f"Processing chunk {i + 1}/{len(chunks)}...")
 
-        # Cleanup temp folder
-        os.rmdir(temp_output)
+            # Save the chunk to a temporary file
+            chunk_path = os.path.join(self.spleeter_dir, f"chunk_{i}.wav")
+            chunk.export(chunk_path, format="wav")
+
+            # Perform separation on the chunk
+            temp_output = os.path.join(self.spleeter_dir, f"temp_spleeter_{i}/")
+            os.makedirs(temp_output, exist_ok=True)
+            separator.separate_to_file(chunk_path, temp_output)
+
+            # Move extracted files to self.spleeter_dir
+            for file in os.listdir(temp_output):
+                if file.endswith(".wav"):
+                    os.rename(
+                        os.path.join(temp_output, file),
+                        os.path.join(self.spleeter_dir, f"{file}_{i}.wav")
+                    )
+
+            # Clean up temporary files
+            os.remove(chunk_path)
+            os.rmdir(temp_output)
 
         print(f"Spleeter stems saved in {self.spleeter_dir}")
 
@@ -629,6 +630,20 @@ class AudioSeparator:
         print(f"Guitar stem extracted successfully and saved to {guitar_path}")
 
 
+    def separate_all(self):
+        step = 1
+        try:
+            # self.separate_demucs()
+            step = 2
+            self.separate_spleeter()
+            step = 3
+            self.separate_openunmix()
+        except Exception as e:
+            write_to_log(f"Exception on step {step},\nfilepath {self.file_path},"
+                         f" directories:\ndemucs: {self.demucs_dir}\nspleeter: {self.spleeter_dir}\nopenunmix: {self.openunmix_dir}\n"
+                         f"Issue: {e}")
+
+
 #-----------------------------
 
 #-----------------------------
@@ -639,9 +654,9 @@ class AudioSeparator:
 # AA.analyze_parselmouth(0.01)
 # AA.save_midi(midi_file)
 if __name__ == "__main__":
-    url = "https://www.youtube.com/watch?v=N9PNCCW7hvo"
-    AA = AudioRecorder()
-    file = AA.download_audio(url)
+    file = "C:/Users/Ymois/PycharmProjects/FinalProject/ServerFiles/Audio_ba4a7e78c4bc4aada61169f1c2a89995.wav"
+    AS = AudioSeparator(file)
+    AS.separate_all()
     print(file)
 
 # best_distance, best_position = compare_melodies_2(midi2, midi1)

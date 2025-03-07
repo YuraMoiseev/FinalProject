@@ -7,7 +7,7 @@ from CServerBL import CServerBL
 from PyQt5.QtWidgets import *
 from PyQt5 import uic
 from PyQtExtensions import *
-import random
+from MusicalAnalysis import validate_url, AudioExtractor
 
 
 class CHostGUI(QMainWindow):
@@ -295,11 +295,12 @@ class CRequestsGUI(QMainWindow):
     def accept_request(self, x, _):
         request_id = self.request_table.item(x, 0)
         file_type = self.request_table.item(x, 5)
+        link = self.request_table.item(x, 3)
         if file_type == "wav":
             path_wav = f"ServerFiles/Request_file_{request_id}_{int(time.time())}.wav"
             extract_file("Requests", path_wav, request_id, "midi_audio_file", "file_type")
             analyzer = AudioAnalyzer(path_wav)
-            analyzer.analyze_full(time_step=1)
+            analyzer.analyze_full()
             os.remove(path_wav)
             path_mid = analyzer.save_midi(f"Request_file_{request_id}_{int(time.time())}.mid")
             song_name, artist_name, requester = self.request_table.item(x, 1), self.request_table.item(x, 2), self.request_table.item(x, 6)
@@ -315,11 +316,27 @@ class CRequestsGUI(QMainWindow):
             os.remove(path_wav)
             self.delete_request(x, _)
 
+        elif validate_url(link):
+            AEobject = AudioExtractor()
+            path_wav = AEobject.download_audio(link)
+            if path_wav is not None:
+                analyzer = AudioAnalyzer(path_wav)
+                analyzer.analyze_full()
+                os.remove(path_wav)
+                path_mid = analyzer.save_midi(f"Request_file_{request_id}_{int(time.time())}.mid")
+                song_name, artist_name, requester = self.request_table.item(x, 1), self.request_table.item(x, 2), self.request_table.item(x, 6)
+                add_song(path_mid, song_name, artist_name, requester)
+                os.remove(path_mid)
+                self.delete_request(x, _)
+            else:
+                write_to_log(f"Invalid YouTube link, could not accept request {request_id}")
+
+
         else:
-            write_to_log("Invalid file type, could not accept request")
+            write_to_log(f"Invalid file type, could not accept request {request_id}")
 
 
-    def update_request(self, x, y):
+    def update_request(self, x, _):
         data = self.request_table.getRowData(x)
         self.update_request_wnd = RequestWindow(x, data, self)
 
