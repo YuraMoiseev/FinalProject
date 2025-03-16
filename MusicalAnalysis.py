@@ -1,11 +1,8 @@
 import librosa
-import matplotlib.pyplot as plt
 import parselmouth
 from mido import MetaMessage, Message, MidiFile, MidiTrack, bpm2tempo
-import os
 import crepe
 from scipy.io import wavfile
-# from pydub import AudioSegment
 from fastdtw import fastdtw
 from scipy.spatial.distance import euclidean
 import io
@@ -18,21 +15,21 @@ import yt_dlp
 import torchaudio
 from demucs.pretrained import get_model
 from demucs.apply import apply_model
-from spleeter.separator import Separator
-import openunmix
-import soundfile as sf
 import numpy as np
 from pytube import YouTube
 import re
+import librosa.feature
+from tensorflow.python.ops.op_selector import is_iterable
 from pydub import AudioSegment
-from pydub.utils import make_chunks
 from ConstantsAndLogging import write_to_log
+import tensorflow as tf
+import tensorflow_hub as hub
 
 coef = 10
 TIMING_WEIGHT = 1
-MELODY_WEIGHT = 100
-PROGRESSION_WEIGHT = 1000
-GENERAL_WEIGHT = TIMING_WEIGHT + MELODY_WEIGHT + PROGRESSION_WEIGHT
+MELODY_WEIGHT = 2
+PROGRESSION_WEIGHT = 3
+GENERAL_WEIGHT = TIMING_WEIGHT * MELODY_WEIGHT * PROGRESSION_WEIGHT
 
 
 def get_complete_file_path(file_type, file_name, dir):
@@ -75,6 +72,11 @@ def validate_url(url):
     except Exception as e:
         print(f"Error: {e}")
         return False
+
+
+def to_wav(file_name):
+    sound = AudioSegment.from_mp3(file_name)
+    sound.export(file_name[:file_name.find(".")], format="wav")
 
 
 class AudioExtractor:
@@ -149,7 +151,6 @@ class MidiAnalyzer:
                         active_notes[instance.note] = None
 
 
-
     def note_sequences(self):
         try:
             tracks = []
@@ -174,15 +175,19 @@ class MidiAnalyzer:
     def timing_sequences(self):
         try:
             tracks = []
+            tempo = 120 # default tempo
             for track in self.midi.tracks:
                 track_timings = []
                 active_notes = {}
                 for instance in track:
+                    sec_time = instance.time * 60 / (self.midi.ticks_per_beat * tempo)
+                    if instance.type == "set_tempo":
+                        tempo = instance.tempo
                     if hasattr(instance, "time"):
-                        active_notes = {note: time + instance.time for note, time in active_notes.items()}
+                        active_notes = {note: time + sec_time for note, time in active_notes.items()}
                         if instance.type == "note_on":
-                            if len(active_notes) == 0 and instance.time > 0:
-                                track_timings.append(instance.time)
+                            if len(active_notes) == 0 and sec_time > 0:
+                                track_timings.append(sec_time)
                             active_notes[instance.note] = 0
                         if instance.type == "note_off":
                             track_timings.append(active_notes[instance.note])
@@ -269,7 +274,7 @@ class MidiAnalyzer:
             timings_dtw = fastdtw(timings[0], timings[1], dist=euclidean)
             progressions_dtw = fastdtw(progressions[0], progressions[1], dist=euclidean)
 
-            similarity = progressions_dtw[0] * PROGRESSION_WEIGHT + melody_dtw[0] * MELODY_WEIGHT + timings_dtw[0] * TIMING_WEIGHT
+            similarity = progressions_dtw[0] ** PROGRESSION_WEIGHT * melody_dtw[0] ** MELODY_WEIGHT * timings_dtw[0] ** TIMING_WEIGHT
 
             if similarity < res[0] or res[1] == -1:
                 res = similarity, i
@@ -307,13 +312,14 @@ class MidiAnalyzer:
 
         for (name, artist), midi_blob in song_dict.items():
             midi_object = MidiAnalyzer.load_midi_from_blob(midi_blob)
-            similarity = MidiAnalyzer.similarity(self.compare_midis(midi_object)[0])
+            analysis_data = self.compare_midis(midi_object)
+            similarity = MidiAnalyzer.similarity(analysis_data[0])
 
             # Push only if we have fewer than 20 results or the new distance is better
             if len(top_matches) < 20:
-                heapq.heappush(top_matches, (similarity, name, artist))
+                heapq.heappush(top_matches, (similarity, name, artist, analysis_data[1], analysis_data[2]))
             else:
-                heapq.heappushpop(top_matches, (similarity, name, artist))
+                heapq.heappushpop(top_matches, (similarity, name, artist, analysis_data[1], analysis_data[2]))
 
         # Sort results by best (smallest) distance
         return sorted(top_matches, key=lambda x: x[0])
@@ -326,9 +332,10 @@ class AudioAnalyzer:
         'C5': 523.25, 'C6': 1046.50, 'C7': 2093, 'C8': 4186.01
     }
 
-    def __init__(self, file_path):
+    def __init__(self, file_path=None):
         self.file_path = file_path
-        self.midi_object = MidiFile()
+        self.midi_object = MidiFile(ticks_per_beat=480)
+        self.lists = []
 
     @staticmethod
     def frequency_to_note_name(frequency):
@@ -369,6 +376,42 @@ class AudioAnalyzer:
             self.update_midi_file(timestamps, pitch_values, "C0", "C8")
         return pitch_values, timestamps
 
+    def analyze_torchcrepe(self, audio_path, time_step, keep_stamps=True):
+        audio, sr = librosa.load(audio_path, sr=16000)
+        audio = torch.tensor(audio).unsqueeze(0)
+
+        # Compute hop length based on time_step
+        hop_length = int(time_step * sr)
+
+        # Run pitch prediction
+        pitches, _ = torchcrepe.predict(audio, sr, hop_length=hop_length, fmin=50, fmax=2000, model='full')
+
+        # Generate timestamps
+        timestamps = torch.arange(len(pitches)) * (hop_length / sr)
+
+        if keep_stamps:
+            self.update_midi_file(timestamps, pitches, "C0", "C8")
+
+    def analyze_librosa_hpss(self, audio_path, time_step, keep_stamps=True):
+        # Load audio
+        y, sr = librosa.load(audio_path, sr=None)
+
+        # Separate harmonic and percussive components
+        y_harmonic, y_percussive = librosa.effects.hpss(y)
+
+        # Set custom hop length
+        hop_length = int(time_step*sr)
+
+        # Extract pitches using pyin
+        f0, voiced_flag, voiced_probs = librosa.pyin(y_harmonic, fmin=AudioAnalyzer.NOTE_NAMES.index('C2'),
+                                                     fmax=AudioAnalyzer.NOTE_NAMES.index('C7'), sr=sr, hop_length=hop_length)
+
+        # Convert frame indices to timestamps
+        timestamps = librosa.frames_to_time(range(len(f0)), sr=sr, hop_length=hop_length)
+
+        if keep_stamps:
+            self.update_midi_file(timestamps, f0, "C0", "C8")
+
     def analyze_crepe(self, time_step, keep_stamps=True):
         def process_channel(channel_data):
             time, frequency, confidence, _ = crepe.predict(channel_data, sample_rate, step_size=int(time_step * 1000))
@@ -388,47 +431,101 @@ class AudioAnalyzer:
             self.update_midi_file(left_timestamps, left_frequencies, "C0", "C8")
         return right_frequencies, right_timestamps, left_frequencies, left_timestamps
 
-    def analyze_torchcrepe(self, audio_path, time_step, keep_stamps=True):
-        audio, sr = librosa.load(audio_path, sr=16000)
-        audio = torch.tensor(audio).unsqueeze(0)
+    def analyze_spice(self, time_step, keep_stamps=True):
+        model = hub.load("https://tfhub.dev/google/spice/2")
 
-        # Compute hop length based on time_step
-        hop_length = int(time_step * sr)
+        def process_channel(channel_data):
+            # Normalize audio (-1 to 1)
+            channel_data = channel_data.astype(np.float32) / np.max(np.abs(channel_data))
 
-        # Run pitch prediction
-        pitches, _ = torchcrepe.predict(audio, sr, hop_length=hop_length, fmin=50, fmax=2000, model='full')
+            # Run inference
+            outputs = model.signatures["serving_default"](tf.constant(channel_data, dtype=tf.float32))
 
-        # Generate timestamps
-        timestamps = torch.arange(len(pitches)) * (hop_length / sr)
+            # Extract pitch estimates
+            frequencies = outputs["pitch"].numpy()
+            confidence = outputs["uncertainty"].numpy()
+            confidence = 1.0 - confidence  # Convert uncertainty to confidence
 
-        if keep_stamps:
-            self.update_midi_file(timestamps, pitches, "C0", "C8")
+            # Filter based on confidence threshold
+            valid_indices = confidence >= 0.5
+            timestamps = np.arange(len(frequencies)) * time_step  # Generate timestamps
+
+            return timestamps[valid_indices], frequencies[valid_indices]
+
+        # Load the audio file
+        sample_rate, audio = wavfile.read(self.file_path)
+
+        # Ensure the sample rate is 16kHz (SPICE requires 16kHz)
+        target_sample_rate = 16000
+        if sample_rate != target_sample_rate:
+            audio = librosa.resample(audio.astype(np.float32), orig_sr=sample_rate, target_sr=target_sample_rate)
+
+        # Handle mono and stereo audio
+        if len(audio.shape) == 1:  # Mono
+            timestamps, frequencies = process_channel(audio)
+            if keep_stamps:
+                self.update_midi_file(timestamps, frequencies, "C0", "C8")
+            return frequencies, timestamps, None, None
+
+        elif len(audio.shape) == 2:  # Stereo
+            left_timestamps, left_frequencies = process_channel(audio[:, 0])
+            right_timestamps, right_frequencies = process_channel(audio[:, 1])
+
+            if keep_stamps:
+                self.update_midi_file(right_timestamps, right_frequencies, "C0", "C8")
+                self.update_midi_file(left_timestamps, left_frequencies, "C0", "C8")
+
+            return right_frequencies, right_timestamps, left_frequencies, left_timestamps
 
     def analyze_full(self, time_step=0.01, keep_stamps=True):
         try:
             self.analyze_crepe(time_step, keep_stamps)
             self.analyze_librosa(time_step, keep_stamps)
             self.analyze_parselmouth(time_step, keep_stamps)
-            # self.analyze_torchcrepe(time_step, keep_stamps)
+            self.analyze_torchcrepe(time_step, keep_stamps)
+            self.analyze_spice(time_step, keep_stamps)
+            self.analyze_librosa_hpss(time_step, keep_stamps)
         except Exception as e:
-            write_to_log("Exception" + str(e))
+            write_to_log("Exception " + str(e))
 
-    def update_midi_file(self, timestamps, pitch_values, lower_limit, upper_limit, track_name=None):
+    def analyze_smart(self, stem, time_step=0.01, keep_stamps=True):
+        """Apply the best tool for each stem."""
 
-        lower_freq = AudioAnalyzer.NOTE_NAMES[lower_limit]
+        stem_methods = {
+            "vocals": [self.analyze_crepe, self.analyze_parselmouth, self.analyze_spice],
+            "bass": [self.analyze_crepe, self.analyze_parselmouth, self.analyze_torchcrepe],
+            "guitar": [self.analyze_crepe, self.analyze_torchcrepe, self.analyze_librosa_hpss],
+            "piano": [self.analyze_librosa_hpss, self.analyze_crepe, self.analyze_parselmouth],
+            "other": [self.analyze_librosa_hpss, self.analyze_crepe, self.analyze_parselmouth],
+        }
+
+        if stem not in stem_methods:
+            return
+
+        try:
+            for method in stem_methods[stem]:
+                method(time_step, keep_stamps)
+
+        except Exception as e:
+            write_to_log(f"Exception in analyze_smart ({stem}): {str(e)}")
+
+    def update_midi_file(self, timestamps, pitch_values, lower_limit, upper_limit, track_name=None, tempo=120):
+
+        lower_freq = AudioAnalyzer.NOTE_TO_FREQ[lower_limit]
         upper_freq = AudioAnalyzer.NOTE_TO_FREQ[upper_limit]
 
         # Add a track with a name to the MIDI file
         track = MidiTrack()
         if track_name is None:
-            track.append(MetaMessage('track_name', name=f"track{len(self.midi_object.tracks)}"))
+            track.append(MetaMessage('track_name', name=f"track{len(self.midi_object.tracks)}", ))
         else:
-            track.append(MetaMessage('track_name', name=track_name))
+            track.append(MetaMessage('track_name', name=track_name + f'{len(self.midi_object.tracks)}'))
+
+        track.append(MetaMessage("set_tempo", tempo=bpm2tempo(120)))
 
         self.midi_object.tracks.append(track)
 
         # Add MIDI events
-        ppq = 500  # Pulses per quarter note
         last_time = 0
         last_note = None
 
@@ -471,7 +568,7 @@ class AudioAnalyzer:
                 last_note = restricted_note
 
             # Calculate delta time
-            delta_time += (t - last_time) * ppq / (1 / 2)  # Assuming 1/2 seconds per beat for 120 BPM
+            delta_time += (t - last_time) * self.midi_object.ticks_per_beat * 2  # Assuming 2 beats per second for 120 BPM
             last_time = t
 
         # Close the last note
@@ -497,152 +594,56 @@ class AudioSeparator:
         self.file_path = file_path
         self.base_dir = base_dir
 
-        # Define instance-specific directories
+        # Define directories
         self.demucs_dir = os.path.join(os.getcwd(), self.base_dir, "stems/demucs/")
-        self.spleeter_dir = os.path.join(os.getcwd(), self.base_dir, "stems/spleeter/")
-        self.openunmix_dir = os.path.join(os.getcwd(), self.base_dir, "stems/openunmix/")
-
         self.create_dirs()
 
     def create_dirs(self):
         """Creates necessary directories if they do not exist."""
         os.makedirs(self.demucs_dir, exist_ok=True)
-        os.makedirs(self.spleeter_dir, exist_ok=True)
-        os.makedirs(self.openunmix_dir, exist_ok=True)
 
     def change_base_file(self, file_path):
         """Change the base audio file for processing."""
         self.file_path = file_path
 
     def separate_demucs(self):
-        """Separate stems using Demucs and save them in the designated directory."""
-        print("Running Demucs...")
+        """Separate stems using Hybrid Demucs and save them in the designated directory."""
+        print("Running Hybrid Demucs...")
 
-        # Load the pre-trained HTDemucs model
-        model = get_model(name="htdemucs")
-
-        # Load the input audio
+        model = get_model(name="htdemucs_6s")  # Hybrid Demucs model
         waveform, sample_rate = torchaudio.load(self.file_path)
 
-        # Convert to stereo if it's mono
+        # Convert mono to stereo
         if waveform.shape[0] == 1:
-            waveform = torch.cat([waveform, waveform], dim=0)  # Duplicate mono to stereo
+            waveform = torch.cat([waveform, waveform], dim=0)
 
-        # Perform separation
-        sources = apply_model(model, waveform[None, ...])  # Add batch dimension
+        # Apply model to extract sources
+        sources = apply_model(model, waveform[None, ...])
 
-        # Map stems to their correct indices in the sources tensor
+        # Define stem mapping for Hybrid Demucs
         stem_indices = {
-            "vocals": 3,
             "drums": 0,
             "bass": 1,
-            "other": 2
+            "guitar": 2,
+            "piano": 3,
+            "vocals": 4,
+            "other": 5
         }
 
-        # Save the core stems
+        # Save each separated stem
         for stem, index in stem_indices.items():
             file_path = os.path.join(self.demucs_dir, f"{stem}.wav")
             torchaudio.save(file_path, sources.squeeze()[index], sample_rate)
 
-        print(f"Demucs stems saved in {self.demucs_dir}")
-
-    @staticmethod
-    def split_audio(input_audio, chunk_length_ms=1000): # 10 sec chunks by default
-        """Split an audio file into smaller chunks."""
-        audio = AudioSegment.from_file(input_audio)
-        chunks = make_chunks(audio, chunk_length_ms)
-        return chunks
-
-    def separate_spleeter(self):
-        """Separate additional stems using Spleeter (piano, synth, etc.) in batches."""
-        print("Running Spleeter in batches...")
-
-        # Path to "other" stem extracted by Demucs
-        input_audio = os.path.join(self.demucs_dir, "other.wav")
-
-        # Ensure the "other.wav" file exists
-        if not os.path.exists(input_audio):
-            print("Error: 'other.wav' from Demucs not found.")
-            return
-
-        # Initialize the Spleeter separator (4-stem mode)
-        separator = Separator("spleeter:4stems")
-
-        # Split the audio into chunks
-        chunks = self.split_audio(input_audio)
-
-        # Process each chunk
-        for i, chunk in enumerate(chunks):
-            print(f"Processing chunk {i + 1}/{len(chunks)}...")
-
-            # Save the chunk to a temporary file
-            chunk_path = os.path.join(self.spleeter_dir, f"chunk_{i}.wav")
-            chunk.export(chunk_path, format="wav")
-
-            # Perform separation on the chunk
-            temp_output = os.path.join(self.spleeter_dir, f"temp_spleeter_{i}/")
-            os.makedirs(temp_output, exist_ok=True)
-            separator.separate_to_file(chunk_path, temp_output)
-
-            # Move extracted files to self.spleeter_dir
-            for file in os.listdir(temp_output):
-                if file.endswith(".wav"):
-                    os.rename(
-                        os.path.join(temp_output, file),
-                        os.path.join(self.spleeter_dir, f"{file}_{i}.wav")
-                    )
-
-            # Clean up temporary files
-            os.remove(chunk_path)
-            os.rmdir(temp_output)
-
-        print(f"Spleeter stems saved in {self.spleeter_dir}")
-
-    def separate_openunmix(self):
-        """Separate guitar and other instruments using Open-Unmix."""
-        print("Running Open-Unmix...")
-
-        # Path to "other" stem extracted by Demucs
-        input_audio = os.path.join(self.demucs_dir, "other.wav")
-
-        # Ensure the "other.wav" file exists
-        if not os.path.exists(input_audio):
-            print("Error: 'other.wav' from Demucs not found.")
-            return
-
-        # Load Open-Unmix model
-        model = openunmix.predict.OpenUnmix(model_str="umxhq")
-
-        # Load the "other" stem
-        audio, rate = sf.read(input_audio)
-
-        # Convert audio to tensor format
-        audio_tensor = torch.tensor(audio.T, dtype=torch.float32)
-
-        # Perform separation
-        with torch.no_grad():
-            estimates = model(audio_tensor[None, ...])  # Add batch dimension
-
-        # Save the extracted guitar track
-        guitar_path = os.path.join(self.openunmix_dir, "guitar.wav")
-        sf.write(guitar_path, estimates[0].squeeze().numpy().T, rate)
-
-        print(f"Guitar stem extracted successfully and saved to {guitar_path}")
-
+        print(f"Hybrid Demucs stems saved in {self.demucs_dir}")
 
     def separate_all(self):
-        step = 1
+        """Run all separation steps."""
         try:
-            # self.separate_demucs()
-            step = 2
-            self.separate_spleeter()
-            step = 3
-            self.separate_openunmix()
+            self.separate_demucs()
+            return self.demucs_dir
         except Exception as e:
-            write_to_log(f"Exception on step {step},\nfilepath {self.file_path},"
-                         f" directories:\ndemucs: {self.demucs_dir}\nspleeter: {self.spleeter_dir}\nopenunmix: {self.openunmix_dir}\n"
-                         f"Issue: {e}")
-
+            print(f"Error during separation: {e}")
 
 #-----------------------------
 
@@ -654,10 +655,16 @@ class AudioSeparator:
 # AA.analyze_parselmouth(0.01)
 # AA.save_midi(midi_file)
 if __name__ == "__main__":
-    file = "C:/Users/Ymois/PycharmProjects/FinalProject/ServerFiles/Audio_ba4a7e78c4bc4aada61169f1c2a89995.wav"
-    AS = AudioSeparator(file)
-    AS.separate_all()
-    print(file)
+    # file = "C:/Users/Ymois/PycharmProjects/FinalProject/ServerFiles/Audio_ba4a7e78c4bc4aada61169f1c2a89995.wav"
+    file = "C:/Users/Ymois/PycharmProjects/FinalProject/MusicFiles/Midi/MidiTestPiano2.mid"
+    for i in MidiFile(file):
+        if is_iterable(i):
+            for j in i:
+                print(j)
+        else:
+            print(i)
+    AA = MidiAnalyzer(file)
+
 
 # best_distance, best_position = compare_melodies_2(midi2, midi1)
 # print(f"Best match found at position {best_position} with similarity {similarity(best_distance)}%")

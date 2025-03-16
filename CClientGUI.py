@@ -72,8 +72,7 @@ class CClientGUI(CClientBL, QMainWindow):
         if self._client_socket is not None:
             self.create_homepage_ui()
             self.connected = True
-            self.update_thread = threading.Thread(target=self.update_check)
-            # self.update_thread.start()
+ 
         else:
             self.create_error_wnd()
 
@@ -218,13 +217,11 @@ class CClientGUI(CClientBL, QMainWindow):
             self.safe_receive()
             time.sleep(1)
 
-
     # terminates the workflow in case of an exception arising
     def safe_send(self, data):
         is_sent = self.send_data(data)
         if not is_sent:
             self.forced_termination()
-            # return False
         else:
             return True
 
@@ -240,12 +237,13 @@ class CClientGUI(CClientBL, QMainWindow):
     def forced_termination(self):
         self.connected = False
         pop_up = QPopUpWidget("An error occurred in the workflow. The application will be terminated", POP_UP_LABEL2, self, (1, ["OK"]))
-        if pop_up.exec_():
-            for window in self.windows:
-                window.close()
-            self.windows.clear()
-            self._parent_wnd.show()
-            self.close()
+        pop_up.exec_()
+        for window in self.windows:
+            window.close()
+        self.windows.clear()
+        self._parent_wnd.show()
+        self._parent_wnd.client = None
+        self.close()
 
 
 class CLoginGUI(QDialog):
@@ -441,11 +439,12 @@ class MainWindow(QMainWindow):
         print("Will be done later...")
 
     def on_click_back(self):
-        self._parent_wnd.safe_send("Delete_session")
-        result = self._parent_wnd.safe_receive()
-        write_to_log(result)
-        self._parent_wnd.show()
-        self.hide()
+        is_sent = self._parent_wnd.safe_send("Delete_session")
+        if is_sent:
+            result = self._parent_wnd.safe_receive()
+            write_to_log(result)
+            self._parent_wnd.show()
+            self.hide()
 
     def closeEvent(self, event):
         if not self._parent_wnd.connected:

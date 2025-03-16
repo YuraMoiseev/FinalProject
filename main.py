@@ -566,6 +566,13 @@ def print_midi_info(midi_file_path):
 
 
 if __name__ == "__main__":
+    from pydub import AudioSegment
+
+    # Load audio
+    audio = AudioSegment.from_file("C:/Users\Ymois\PycharmProjects\FinalProject\ServerFiles\Audio_ba4a7e78c4bc4aada61169f1c2a89995.wav")
+
+    # Export stems (e.g., vocals, bass, drums)
+    audio[:10000].export("output.wav", format="wav")  # Example: Export first 10 seconds
     # count_lines_in_py_files("C:/Users/Ymois/PycharmProjects/FinalProject")
     pass
 
