@@ -300,17 +300,22 @@ class CRequestsGUI(QMainWindow):
             path_mp3 = f"ServerFiles/Request_file_{request_id}_{int(time.time())}.mp3"
             extract_file("Requests", path_mp3, request_id, "midi_audio_file", "file_type")
             path_wav = to_wav(path_mp3)
+            os.remove(path_mp3)
             # Separate stems
             separator = AudioSeparator(path_wav)
             sep_dir = separator.separate_all()
             os.remove(path_wav)
             # Analyze each stem and save as a whole midi file
             analyzer = AudioAnalyzer()
-            for filename in os.listdir(sep_dir):
-                analyzer.change_base_file(os.path.join(sep_dir, filename))
-                analyzer.analyze_smart(filename[:filename.find(".")])  # Analyse with best suiting tools for each stem
-            os.remove(path_wav)
+            print(1)
+            files = os.listdir(sep_dir)
+            for filename in files:
+                analyzer.change_base_file(os.path.join(os.getcwd(), sep_dir, filename))
+                analyzer.analyze_smart(filename, 0.05)  # Analyse with best suiting tools for each stem
+                os.remove(filename)
+            print(2)
             path_mid = analyzer.save_midi(f"Request_file_{request_id}_{int(time.time())}.mid")
+            print(3)
             # Save the midi file to the database
             song_name, artist_name, requester = self.request_table.item(x, 1), self.request_table.item(x, 2), self.request_table.item(x, 6)
             add_song(path_mid, song_name, artist_name, requester)
@@ -327,8 +332,8 @@ class CRequestsGUI(QMainWindow):
             # Analyze each stem and save as a whole midi file
             analyzer = AudioAnalyzer()
             for filename in os.listdir(sep_dir):
-                analyzer.change_base_file(os.path.join(sep_dir, filename))
-                analyzer.analyze_smart(filename[:filename.find(".")])  # Analyse with best suiting tools for each stem
+                analyzer.change_base_file(os.path.join(os.getcwd(), sep_dir, filename))
+                analyzer.analyze_smart(filename, 0.05)  # Analyse with best suiting tools for each stem
             os.remove(path_wav)
             path_mid = analyzer.save_midi(f"Request_file_{request_id}_{int(time.time())}.mid")
             # Save the midi file to the database
@@ -336,6 +341,7 @@ class CRequestsGUI(QMainWindow):
             add_song(path_mid, song_name, artist_name, requester)
             os.remove(path_mid)
             self.delete_request(x, _)
+            write_to_log("Song successfully added!")
 
         elif file_type == "mid":
             path_wav = f"ServerFiles/Request_file_{request_id}_{int(time.time())}.mid"
@@ -344,6 +350,7 @@ class CRequestsGUI(QMainWindow):
             add_song(path_wav, song_name, artist_name, requester)
             os.remove(path_wav)
             self.delete_request(x, _)
+            write_to_log("Song successfully added!")
 
         elif validate_url(link):
             extractor = AudioExtractor()
@@ -356,8 +363,8 @@ class CRequestsGUI(QMainWindow):
                 # Analyze each stem and save as a whole midi file
                 analyzer = AudioAnalyzer()
                 for filename in os.listdir(sep_dir):
-                    analyzer.change_base_file(os.path.join(sep_dir, filename))
-                    analyzer.analyze_smart(filename[:filename.find(".")]) # Analyse with best suiting tools for each stem
+                    analyzer.change_base_file(os.path.join(os.getcwd(), sep_dir, filename))
+                    analyzer.analyze_smart(filename, 0.05) # Analyse with best suiting tools for each stem
                 os.remove(path_wav)
                 path_mid = analyzer.save_midi(f"Request_file_{request_id}_{int(time.time())}.mid")
                 # Save the midi file to the database
@@ -365,6 +372,7 @@ class CRequestsGUI(QMainWindow):
                 add_song(path_mid, song_name, artist_name, requester)
                 os.remove(path_mid)
                 self.delete_request(x, _)
+                write_to_log("Song successfully added!")
             else:
                 write_to_log(f"Invalid YouTube link, could not accept request {request_id}")
 
@@ -440,6 +448,7 @@ class RequestWindow(QMainWindow):
 
         self.label_file = self.findChild(QLabel, "LabelFile")
         self.set_up_file_drop_widget()
+        self.file_drop.chosen_file_path = "_"
 
         self.button_save_request = self.findChild(QPushButton, "ButtonRequest")
         self.button_back = self.findChild(QPushButton, "ButtonBack")
@@ -476,11 +485,9 @@ class RequestWindow(QMainWindow):
         # Update the layout to reflect changes
         layout.update()
 
-
     def back_to_home(self):
         self._parent_wnd.show()
         self.close()
-
 
     def on_click_save_request(self):
         file_type = ""

@@ -392,10 +392,21 @@ def add_request(data, session_id, file_path=None, file_type=None):
 
 def update_request(data, file_path=None, file_type=None):
     try:
-        song_name, artist_name, link, description, request_id = data["name"], data["artist"], data["link"], data["description"], data["id"]
+        song_name, artist_name, link, description, request_id, file_type = data["name"], data["artist"], data["link"], data["description"], data["id"], data["file_type"]
         # Connect to the database
         connection = sqlite3.connect(DB_FILE_NAME)
         cursor = connection.cursor()
+        if file_path == "_":
+            # Insert the data into the Requests table
+            cursor.execute('''
+                        UPDATE Requests 
+                        SET song_name = ?, artist_name = ?, link = ?, description = ?, file_type = ? 
+                        WHERE id = ?;
+                        ''', (song_name, artist_name, link, description, file_type, request_id))
+            connection.commit()
+            connection.close()
+            return "Success"
+
         if file_path is not None:
             # Read the file in binary mode
             with open(file_path, 'rb') as file:

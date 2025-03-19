@@ -76,7 +76,9 @@ def validate_url(url):
 
 def to_wav(file_name):
     sound = AudioSegment.from_mp3(file_name)
-    sound.export(file_name[:file_name.find(".")], format="wav")
+    new_file = file_name[:file_name.find(".")] + ".wav"
+    sound.export(new_file, format="wav")
+    return new_file
 
 
 class AudioExtractor:
@@ -300,7 +302,7 @@ class MidiAnalyzer:
 
     @staticmethod
     def similarity(distance: float):
-        return 100 / (1 + distance / (GENERAL_WEIGHT*10000))
+        return 100 / (1 + distance ** (1/GENERAL_WEIGHT))
 
     @classmethod
     def load_midi_from_blob(cls, blob_data):
@@ -377,40 +379,61 @@ class AudioAnalyzer:
         return pitch_values, timestamps
 
     def analyze_torchcrepe(self, audio_path, time_step, keep_stamps=True):
-        audio, sr = librosa.load(audio_path, sr=16000)
-        audio = torch.tensor(audio).unsqueeze(0)
+        try:
+            # Load and preprocess audio
+            audio, sr = librosa.load(audio_path, sr=16000)
 
-        # Compute hop length based on time_step
-        hop_length = int(time_step * sr)
+            if torch.cuda.is_available():
+                audio = torch.tensor(audio).unsqueeze(0).to("cuda")  # Move to GPU if available
+            else:
+                audio = torch.tensor(audio).unsqueeze(0)
 
-        # Run pitch prediction
-        pitches, _ = torchcrepe.predict(audio, sr, hop_length=hop_length, fmin=50, fmax=2000, model='full')
+            # Compute hop length
+            hop_length = int(time_step * sr)
 
-        # Generate timestamps
-        timestamps = torch.arange(len(pitches)) * (hop_length / sr)
+            # Run pitch prediction
+            result = torchcrepe.predict(audio, sr, hop_length=hop_length, fmin=50, fmax=2000, model='full')
 
-        if keep_stamps:
-            self.update_midi_file(timestamps, pitches, "C0", "C8")
+            # Handle return value
+            if isinstance(result, tuple):
+                pitches, _ = result
+            else:
+                pitches = result
+
+            # Convert tensor to a list of pitches
+            pitches_list = pitches.squeeze().tolist()  # Remove batch dimension and convert to list
+
+            # Generate timestamps
+            timestamps = torch.arange(len(pitches_list)) * (hop_length / sr)
+            timestamps_list = timestamps.tolist()  # Convert timestamps to list
+
+            if keep_stamps:
+                self.update_midi_file(timestamps_list, pitches_list, "C0", "C8")
+        except Exception as e:
+            write_to_log(f"Exception in analyze_torch_crepe: {str(e)}")
 
     def analyze_librosa_hpss(self, audio_path, time_step, keep_stamps=True):
-        # Load audio
-        y, sr = librosa.load(audio_path, sr=None)
+        try:
+            # Load audio
+            y, sr = librosa.load(audio_path, sr=None)
 
-        # Separate harmonic and percussive components
-        y_harmonic, y_percussive = librosa.effects.hpss(y)
+            # Separate harmonic and percussive components
+            y_harmonic, y_percussive = librosa.effects.hpss(y)
 
-        # Set custom hop length
-        hop_length = int(time_step*sr)
+            # Set custom hop length
+            hop_length = int(time_step*sr)
 
-        # Extract pitches using pyin
-        f0, voiced_flag, voiced_probs = librosa.pyin(y_harmonic, fmin=AudioAnalyzer.NOTE_NAMES.index('C2'),
-                                                     fmax=AudioAnalyzer.NOTE_NAMES.index('C7'), sr=sr, hop_length=hop_length)
+            # Extract pitches using pyin
+            f0, voiced_flag, voiced_probs = librosa.pyin(y_harmonic, fmin=AudioAnalyzer.NOTE_NAMES.index('C2'),
+                                                         fmax=AudioAnalyzer.NOTE_NAMES.index('C7'), sr=sr, hop_length=hop_length)
 
-        # Convert frame indices to timestamps
-        timestamps = librosa.frames_to_time(range(len(f0)), sr=sr, hop_length=hop_length)
+            # Convert frame indices to timestamps
+            timestamps = librosa.frames_to_time(range(len(f0)), sr=sr, hop_length=hop_length)
 
-        if keep_stamps:
-            self.update_midi_file(timestamps, f0, "C0", "C8")
+            if keep_stamps:
+                self.update_midi_file(timestamps, f0, "C0", "C8")
+        except Exception as e:
+            write_to_log(f"Exception in analyze_librosa_hpss: {str(e)}")
 
     def analyze_crepe(self, time_step, keep_stamps=True):
         def process_channel(channel_data):
@@ -452,30 +475,35 @@ class AudioAnalyzer:
 
             return timestamps[valid_indices], frequencies[valid_indices]
 
-        # Load the audio file
-        sample_rate, audio = wavfile.read(self.file_path)
+        try:
 
-        # Ensure the sample rate is 16kHz (SPICE requires 16kHz)
-        target_sample_rate = 16000
-        if sample_rate != target_sample_rate:
-            audio = librosa.resample(audio.astype(np.float32), orig_sr=sample_rate, target_sr=target_sample_rate)
+            # Load the audio file
+            sample_rate, audio = wavfile.read(self.file_path)
 
-        # Handle mono and stereo audio
-        if len(audio.shape) == 1:  # Mono
-            timestamps, frequencies = process_channel(audio)
-            if keep_stamps:
-                self.update_midi_file(timestamps, frequencies, "C0", "C8")
-            return frequencies, timestamps, None, None
+            # Ensure the sample rate is 16kHz (SPICE requires 16kHz)
+            target_sample_rate = 16000
+            if sample_rate != target_sample_rate:
+                audio = librosa.resample(audio.astype(np.float32), orig_sr=sample_rate, target_sr=target_sample_rate)
 
-        elif len(audio.shape) == 2:  # Stereo
-            left_timestamps, left_frequencies = process_channel(audio[:, 0])
-            right_timestamps, right_frequencies = process_channel(audio[:, 1])
+            # Handle mono and stereo audio
+            if len(audio.shape) == 1:  # Mono
+                timestamps, frequencies = process_channel(audio)
+                if keep_stamps:
+                    self.update_midi_file(timestamps, frequencies, "C0", "C8")
+                return frequencies, timestamps, None, None
 
-            if keep_stamps:
-                self.update_midi_file(right_timestamps, right_frequencies, "C0", "C8")
-                self.update_midi_file(left_timestamps, left_frequencies, "C0", "C8")
+            elif len(audio.shape) == 2:  # Stereo
+                left_timestamps, left_frequencies = process_channel(audio[:, 0])
+                right_timestamps, right_frequencies = process_channel(audio[:, 1])
 
-            return right_frequencies, right_timestamps, left_frequencies, left_timestamps
+                if keep_stamps:
+                    self.update_midi_file(right_timestamps, right_frequencies, "C0", "C8")
+                    self.update_midi_file(left_timestamps, left_frequencies, "C0", "C8")
+
+                return right_frequencies, right_timestamps, left_frequencies, left_timestamps
+
+        except Exception as e:
+            write_to_log(f"Exception in analyze_spice: {str(e)}")
 
     def analyze_full(self, time_step=0.01, keep_stamps=True):
         try:
@@ -488,15 +516,54 @@ class AudioAnalyzer:
         except Exception as e:
             write_to_log("Exception " + str(e))
 
+    def analyze_smart1(self, stem, time_step=0.01, keep_stamps=True):
+        """Apply the best tool for each stem."""
+
+        stem_methods = {
+            "vocals.wav": [self.analyze_crepe, self.analyze_parselmouth, self.analyze_spice],
+            "bass.wav": [self.analyze_crepe, self.analyze_parselmouth, self.analyze_torchcrepe],
+            "guitar.wav": [self.analyze_crepe, self.analyze_torchcrepe, self.analyze_librosa_hpss],
+            "piano.wav": [self.analyze_librosa_hpss, self.analyze_crepe, self.analyze_parselmouth],
+            "other.wav": [self.analyze_librosa_hpss, self.analyze_crepe, self.analyze_parselmouth],
+        }
+
+        if stem not in stem_methods:
+            return
+
+        try:
+            for method in stem_methods[stem]:
+                method(time_step, keep_stamps)
+
+        except Exception as e:
+            write_to_log(f"Exception in analyze_smart ({stem}): {str(e)}")
+
+    def analyze_smart2(self, stem, time_step=0.01, keep_stamps=True):
+        """Apply the best tool for each stem."""
+
+        stem_methods = {
+            "other": [self.analyze_torchcrepe, self.analyze_spice, self.analyze_librosa_hpss],
+            "C:/Users/Ymois/PycharmProjects/FinalProject/MusicFiles/Audio/MoPFinal.wav" : [self.analyze_torchcrepe, self.analyze_spice, self.analyze_librosa_hpss]
+        }
+
+        if stem not in stem_methods:
+            return
+
+        try:
+            for method in stem_methods[stem]:
+                method(time_step, keep_stamps)
+
+        except Exception as e:
+            write_to_log(f"Exception in analyze_smart ({stem}): {str(e)}")
+
     def analyze_smart(self, stem, time_step=0.01, keep_stamps=True):
         """Apply the best tool for each stem."""
 
         stem_methods = {
-            "vocals": [self.analyze_crepe, self.analyze_parselmouth, self.analyze_spice],
-            "bass": [self.analyze_crepe, self.analyze_parselmouth, self.analyze_torchcrepe],
-            "guitar": [self.analyze_crepe, self.analyze_torchcrepe, self.analyze_librosa_hpss],
-            "piano": [self.analyze_librosa_hpss, self.analyze_crepe, self.analyze_parselmouth],
-            "other": [self.analyze_librosa_hpss, self.analyze_crepe, self.analyze_parselmouth],
+            "vocals.wav": [self.analyze_crepe, self.analyze_parselmouth, self.analyze_torchcrepe],
+            "bass.wav": [self.analyze_crepe, self.analyze_parselmouth, self.analyze_torchcrepe],
+            "guitar.wav": [self.analyze_crepe, self.analyze_torchcrepe, self.analyze_librosa],
+            "piano.wav": [self.analyze_librosa, self.analyze_crepe, self.analyze_parselmouth],
+            "other.wav": [self.analyze_librosa, self.analyze_crepe, self.analyze_parselmouth],
         }
 
         if stem not in stem_methods:
@@ -521,7 +588,7 @@ class AudioAnalyzer:
         else:
             track.append(MetaMessage('track_name', name=track_name + f'{len(self.midi_object.tracks)}'))
 
-        track.append(MetaMessage("set_tempo", tempo=bpm2tempo(120)))
+        track.append(MetaMessage("set_tempo", tempo=bpm2tempo(tempo)))
 
         self.midi_object.tracks.append(track)
 
@@ -656,14 +723,16 @@ class AudioSeparator:
 # AA.save_midi(midi_file)
 if __name__ == "__main__":
     # file = "C:/Users/Ymois/PycharmProjects/FinalProject/ServerFiles/Audio_ba4a7e78c4bc4aada61169f1c2a89995.wav"
-    file = "C:/Users/Ymois/PycharmProjects/FinalProject/MusicFiles/Midi/MidiTestPiano2.mid"
-    for i in MidiFile(file):
-        if is_iterable(i):
-            for j in i:
-                print(j)
-        else:
-            print(i)
-    AA = MidiAnalyzer(file)
+    file = "C:/Users\Ymois\PycharmProjects\FinalProject\MusicFiles\Audio\Melody.mp3"
+
+    AA = AudioAnalyzer(file)
+    AA.analyze_torchcrepe(file, 0.01, True)
+    midi = AA.midi_object
+    for t in midi.tracks:
+        for m in t:
+            print(m)
+
+    AA.save_midi("MOP_FINAL1.mid")
 
 
 # best_distance, best_position = compare_melodies_2(midi2, midi1)

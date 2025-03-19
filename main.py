@@ -566,16 +566,23 @@ def print_midi_info(midi_file_path):
 
 
 if __name__ == "__main__":
-    from pydub import AudioSegment
+    # import tensorflow as tf
+    #
+    # print("Num GPUs Available:", len(tf.config.list_physical_devices('GPU')))
+    #
+    # print("GPUs:", tf.config.list_physical_devices('GPU'))
+    # tf.debugging.set_log_device_placement(True)
+    #
+    # with tf.device('/GPU:0'):
+    #     a = tf.constant([[1.0, 2.0, 3.0]])
+    #     b = tf.constant([[4.0, 5.0, 6.0]])
+    #     print("Result:", tf.matmul(a, b, transpose_b=True))
 
-    # Load audio
-    audio = AudioSegment.from_file("C:/Users\Ymois\PycharmProjects\FinalProject\ServerFiles\Audio_ba4a7e78c4bc4aada61169f1c2a89995.wav")
+    import tensorflow as tf
 
-    # Export stems (e.g., vocals, bass, drums)
-    audio[:10000].export("output.wav", format="wav")  # Example: Export first 10 seconds
-    # count_lines_in_py_files("C:/Users/Ymois/PycharmProjects/FinalProject")
+    print(tf.sysconfig.get_build_info())
+
     pass
-
 
 # Min heap of melodies by difference
 
