@@ -130,7 +130,6 @@ class QPopUpWidget(QDialog):
         self.setWindowTitle("Pop-Up")
         self.setFixedSize(350, 300)
 
-
         self.layout = QVBoxLayout()
         self.label_info = QLabel(labeltext1)
         self.label_info.setStyleSheet(LABEL_STYLE_SHEET)
@@ -142,6 +141,7 @@ class QPopUpWidget(QDialog):
         self.layout.addWidget(self.label_error)
         self.label_error.hide()
 
+        print("Initing first button")
         self.button_1 = QPushButton(buttons[1][0])
         self.button_1.setStyleSheet(BUTTON_STYLE_SHEET)
         self.button_1.clicked.connect(self.on_click_positive)
@@ -154,7 +154,9 @@ class QPopUpWidget(QDialog):
             self.button_2.clicked.connect(self.on_click_negative)
             self.layout.addWidget(self.button_2)
 
+        print("Setting Layot")
         self.setLayout(self.layout)
+        print("Init done.")
 
     # override if needed
     def on_click_positive(self):

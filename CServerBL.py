@@ -78,7 +78,10 @@ class CServerBL:
             if len(self._client_handlers) > 0:
                 # Waiting to close all opened threads
                 for client_thread in self._client_handlers:
-                    client_thread.close_socket()
+                    try:
+                        client_thread.close_socket()
+                    except OSError: # catch already closed sockets
+                        continue
                     client_thread.join()
                 write_to_log(f"[SERVER_BL] All Client threads are closed")
             write_to_log(f"[SERVER_BL] Server thread is DONE")

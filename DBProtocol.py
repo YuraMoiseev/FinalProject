@@ -124,6 +124,43 @@ def create_sessions_table():
     connection.close()
 
 
+
+def create_responses_table():
+    # Create requests table in DB
+    connection = sqlite3.connect(DB_FILE_NAME)
+    cursor = connection.cursor()
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS Responses (
+        id INTEGER PRIMARY KEY,
+        is_approved BOOLEAN NOT NULL,
+        description TEXT,
+        user_id INTEGER NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES Users (id)
+    )
+    """)
+
+    connection.commit()
+    connection.close()
+
+
+def create_searches_table():
+    # Create requests table in DB
+    connection = sqlite3.connect(DB_FILE_NAME)
+    cursor = connection.cursor()
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS Sessions (
+        id INTEGER PRIMARY KEY,
+        results JSONB,
+        timestamp INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES Users (id)
+    )
+    """)
+
+    connection.commit()
+    connection.close()
+
+
 def register_client(data):
     try:
         username, email, password = data["login"], data["email"], data["password"]
@@ -555,6 +592,17 @@ def fetch_songs(offset=0, amount=10):
                         ''', (amount, offset))
     rows = cursor.fetchall()
     result_dict = {(song_name, artist_name): blob_data for song_name, artist_name, blob_data in rows}
+    return result_dict
+
+
+def fetch_song_names(offset=0, amount=10):
+    connection = sqlite3.connect(DB_FILE_NAME)
+    cursor = connection.cursor()
+    cursor.execute('''
+                        SELECT song_name, artist_name FROM Songs LIMIT ? OFFSET ?
+                        ''', (amount, offset))
+    rows = cursor.fetchall()
+    result_dict = {song_name: artist_name for song_name, artist_name in rows}
     return result_dict
 
 

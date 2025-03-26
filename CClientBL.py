@@ -62,7 +62,6 @@ class CClientBL:
 
     def cond(self):
         self.is_recording = not self.is_recording
-        write_to_log(self.is_recording)
 
     @staticmethod
     def get_audio_devices():

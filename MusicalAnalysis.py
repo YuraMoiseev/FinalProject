@@ -19,7 +19,6 @@ import numpy as np
 from pytube import YouTube
 import re
 import librosa.feature
-from tensorflow.python.ops.op_selector import is_iterable
 from pydub import AudioSegment
 from ConstantsAndLogging import write_to_log
 import tensorflow as tf
@@ -29,7 +28,7 @@ coef = 10
 TIMING_WEIGHT = 1
 MELODY_WEIGHT = 2
 PROGRESSION_WEIGHT = 3
-GENERAL_WEIGHT = TIMING_WEIGHT * MELODY_WEIGHT * PROGRESSION_WEIGHT
+GENERAL_WEIGHT = TIMING_WEIGHT + MELODY_WEIGHT + PROGRESSION_WEIGHT
 
 
 def get_complete_file_path(file_type, file_name, dir):
@@ -183,7 +182,7 @@ class MidiAnalyzer:
                 active_notes = {}
                 for instance in track:
                     sec_time = instance.time * 60 / (self.midi.ticks_per_beat * tempo)
-                    if instance.type == "set_tempo":
+                    if instance.type == "set_tempo": # handle tempo change
                         tempo = instance.tempo
                     if hasattr(instance, "time"):
                         active_notes = {note: time + sec_time for note, time in active_notes.items()}
@@ -256,8 +255,7 @@ class MidiAnalyzer:
         return [[note] for note in self.note_sequence[i]], [[time] for time in self.timing_sequence[i]], [[prog] for prog in self.progression_sequence[i]]
 
     # receives instances of series of notes and relative times and finds the most similar parts
-    @staticmethod
-    def _closest_sequences_2(track1, track2):
+    def _closest_sequences_2(self, track1, track2):
         sliding_window_length = len(track1[0])
         # if any(not lst for lst in track1) or any(not lst for lst in track2):
         #     return
@@ -266,6 +264,9 @@ class MidiAnalyzer:
             notes = (track1[0], track2[0][i:i + sliding_window_length])
             timings = (track1[1], track2[1][i:i + sliding_window_length])
             progressions = (track1[2], track2[2][i:i + sliding_window_length-1])
+            # skip empty progressions
+            if any([len(lst)==0 for lst in [notes[0], notes[1], timings[0], timings[1], progressions[0], progressions[1]]]):
+                continue
 
             # print(notes)
             # print()
@@ -276,12 +277,17 @@ class MidiAnalyzer:
             timings_dtw = fastdtw(timings[0], timings[1], dist=euclidean)
             progressions_dtw = fastdtw(progressions[0], progressions[1], dist=euclidean)
 
-            similarity = progressions_dtw[0] ** PROGRESSION_WEIGHT * melody_dtw[0] ** MELODY_WEIGHT * timings_dtw[0] ** TIMING_WEIGHT
+            distance = progressions_dtw[0] ** PROGRESSION_WEIGHT + melody_dtw[0] ** MELODY_WEIGHT + timings_dtw[0] ** TIMING_WEIGHT
 
-            if similarity < res[0] or res[1] == -1:
-                res = similarity, i
+            if distance < res[0] or res[1] == -1:
+                res = distance, self._convert_id_to_time(i, track2[1]) # sum up all the times to get a relative time from the beginning of the track
 
         return res
+
+
+    @staticmethod
+    def _convert_id_to_time(i, timing_sequence):
+        return sum([sum(time_vector) for time_vector in timing_sequence[:i]])
 
     def compare_midis(self, midi_object):
         result_distance = -1, -1, -1
@@ -291,7 +297,7 @@ class MidiAnalyzer:
             for j in range(len(user_sequences)):
                 track_result = self._closest_sequences_2(user_sequences[j], song_sequences[i])
                 if (track_result[0] < result_distance[0] and track_result[0]!=-1) or result_distance[0] == -1:
-                    result_distance = track_result[0], (i, j)
+                    result_distance = track_result[0], (i, j), track_result[1]
         return result_distance
 
     @classmethod
@@ -314,14 +320,14 @@ class MidiAnalyzer:
 
         for (name, artist), midi_blob in song_dict.items():
             midi_object = MidiAnalyzer.load_midi_from_blob(midi_blob)
-            analysis_data = self.compare_midis(midi_object)
-            similarity = MidiAnalyzer.similarity(analysis_data[0])
+            distance, track_indices, time = self.compare_midis(midi_object)
+            similarity = MidiAnalyzer.similarity(distance)
 
             # Push only if we have fewer than 20 results or the new distance is better
             if len(top_matches) < 20:
-                heapq.heappush(top_matches, (similarity, name, artist, analysis_data[1], analysis_data[2]))
+                heapq.heappush(top_matches, (similarity, name, artist, time))
             else:
-                heapq.heappushpop(top_matches, (similarity, name, artist, analysis_data[1], analysis_data[2]))
+                heapq.heappushpop(top_matches, (similarity, name, artist, time))
 
         # Sort results by best (smallest) distance
         return sorted(top_matches, key=lambda x: x[0])
@@ -512,7 +518,7 @@ class AudioAnalyzer:
             self.analyze_parselmouth(time_step, keep_stamps)
             self.analyze_torchcrepe(time_step, keep_stamps)
             self.analyze_spice(time_step, keep_stamps)
-            self.analyze_librosa_hpss(time_step, keep_stamps)
+            # self.analyze_librosa_hpss(time_step, keep_stamps)
         except Exception as e:
             write_to_log("Exception " + str(e))
 
@@ -692,9 +698,9 @@ class AudioSeparator:
             "drums": 0,
             "bass": 1,
             "guitar": 2,
-            "piano": 3,
-            "vocals": 4,
-            "other": 5
+            "piano": 5,
+            "vocals": 3,
+            "other": 4
         }
 
         # Save each separated stem

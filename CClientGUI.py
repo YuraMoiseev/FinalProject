@@ -1,9 +1,13 @@
+import queue
 import threading
 from Protocol import *
 from CClientBL import CClientBL
 from PyQt5.QtWidgets import *
-from PyQt5.QtCore import QPropertyAnimation, QSequentialAnimationGroup, QParallelAnimationGroup, QPoint
+from PyQt5.QtCore import QPropertyAnimation, QSequentialAnimationGroup, QParallelAnimationGroup, QPoint, QMetaObject, \
+    Qt, QTimer, pyqtSlot
 from PyQt5 import uic
+from PyQt5.QtCore import pyqtSignal, pyqtSlot, QObject
+from PyQt5.QtWidgets import QMainWindow, QDialog, QVBoxLayout, QLabel, QPushButton
 from PyQtExtensions import QFileDropWidget, QPopUpWidget
 import ast
 
@@ -510,25 +514,20 @@ class RecordWindow(QMainWindow):
     def select_audio_device(self):
         self._client_object.select_audio_device(self.combo_box_devices.currentText())
 
-    def _record(self):
+    def _record(self, q):
         self._client_object.update_thread_lock = True
         self._client_object.record_wav("recording.wav")
         self.label_record.setText("Recording done. Sending data to the server...")
         self._client_object.safe_send(SEARCH_SONG_REQUEST)
-        # result = self._client_object.safe_receive()
-        # print(result)
-        # if result == SEND_FILE_APPROVE:
         self._client_object.send_file("recording.wav")
         write_to_log(1)
         result = ast.literal_eval(self._client_object.safe_receive())
         write_to_log(2)
         displayed_text = "Found songs \n"
         for i in result:
-            displayed_text += f"{i[1]} by {i[2]} is {i[0]}% similar to your recording"
+            displayed_text += f"{i[1]} by {i[2]} is {i[0]:.2f}% similar to your recording, at the time {int(i[3]//60)}:{int(i[3]%60//1):02} \n"
         write_to_log(3)
-        pop_up = QPopUpWidget(displayed_text, POP_UP_LABEL2, self, (1, ["OK"]))
-        if pop_up.exec_():
-            self.close()
+        q.put(displayed_text)
         write_to_log(4)
         self._client_object.update_thread_lock = False
         try:
@@ -541,14 +540,55 @@ class RecordWindow(QMainWindow):
 
         self._client_object.cond()
         # time.sleep(3)
-        # self.label_record.setText("Record")
+        self.label_record.setText("Record")
+
+    from PyQt5.QtWidgets import QProgressDialog, QMessageBox
 
     def on_click_record(self):
         if not self._client_object.is_recording:
             self.label_record.setText("Recording...")
             self._client_object.cond()
-            recording = threading.Thread(target=self._record)
-            recording.start()
+
+            # Initialize progress dialog
+            progress_dialog = QProgressDialog("Tracing your tune...", "Cancel", 0, 0, self)
+            progress_dialog.setWindowTitle("Search")
+            progress_dialog.setCancelButtonText("Stop Search")
+            progress_dialog.setMinimumDuration(0)
+            progress_dialog.setWindowModality(Qt.WindowModal)
+            label = progress_dialog.findChild(QLabel)  # Get the QLabel inside the dialog
+            if label:
+                label.setStyleSheet(LABEL_STYLE_SHEET)
+
+            # Queue to retrieve results from the thread
+            q = queue.Queue()
+
+            # Start recording in a separate thread
+            recording_thread = threading.Thread(target=self._record, args=[q])
+            recording_thread.start()
+
+            # Handle cancellation
+            def cancel_search():
+                if recording_thread.is_alive():
+                    self._client_object.is_recording = False  # Stop recording
+                    QMessageBox.information(self, "Search Stopped", "Search was aborted by the user.")
+                progress_dialog.close()
+
+            progress_dialog.canceled.connect(cancel_search)
+
+            # Check thread status periodically
+            def check_thread():
+                if not recording_thread.is_alive():
+                    progress_dialog.close()
+                    try:
+                        result_text = q.get_nowait()  # Get result without blocking
+                        pop_up = QPopUpWidget(result_text, "POP_UP_LABEL2", self, (1, ["OK"]))
+                        pop_up.exec_()
+                    except queue.Empty:
+                        pass
+                else:
+                    QTimer.singleShot(100, check_thread)  # Check again in 100ms
+
+            check_thread()
 
         else:
             self.label_record.setText("Record")

@@ -86,10 +86,10 @@ def create_response_and_execute_reaction(data, session_id, client_handler): # Se
             return
         songs = fetch_songs()
         # write_to_log(f"[PROTOCOL] fetched songs: {list(songs.keys())}")
-        AA = AudioAnalyzer(file_name)
-        AA.analyze_full(time_step=0.1)
-        MA = MidiAnalyzer.load_from_audio_analyzer(AA)
-        res_best = MA.compare_to_db(songs)
+        audio_analyzer = AudioAnalyzer(file_name)
+        audio_analyzer.analyze_full(time_step=0.02)
+        midi_analyzer = MidiAnalyzer.load_from_audio_analyzer(audio_analyzer)
+        res_best = midi_analyzer.compare_to_db(songs)
         os.remove(file_name)
         # write_to_log(f"[PROTOCOL] 20 best songs are: {res_best}")
         return f"{res_best}"
@@ -118,6 +118,9 @@ def create_response_and_execute_reaction(data, session_id, client_handler): # Se
     elif cmd == "Delete_session":
         response = delete_session(session_id)
         client_handler.session = None
+    elif cmd == "Songs":
+        song_names = fetch_song_names(args)
+        response = str(song_names)
     else:
         response = "Error"
     if response == "Bye!":
@@ -229,7 +232,7 @@ def parse_args(data: str):
 
 
 REQUESTS_1 = {"Hello": "Hello!", "Find": best_matches,
-              SEND_FILE_SUCCESS: SEND_FILE_SUCCESS, SEND_FILE_FAIL: SEND_FILE_FAIL, DISCONNECT_MSG: "Bye!", "Update": "All Good"}
+              SEND_FILE_SUCCESS: SEND_FILE_SUCCESS, SEND_FILE_FAIL: SEND_FILE_FAIL, DISCONNECT_MSG: "Bye!", "Update": "All Good", "Songs": "K"}
 
 REQUESTS_2 = ["Register", "Request", "Delete_session", SEARCH_SONG_REQUEST]
 
