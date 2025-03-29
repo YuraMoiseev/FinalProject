@@ -20,15 +20,9 @@ from pytube import YouTube
 import re
 import librosa.feature
 from pydub import AudioSegment
-from ConstantsAndLogging import write_to_log
+from ConstantsAndLogging import write_to_log, WASC
 import tensorflow as tf
 import tensorflow_hub as hub
-
-coef = 10
-TIMING_WEIGHT = 1
-MELODY_WEIGHT = 2
-PROGRESSION_WEIGHT = 3
-GENERAL_WEIGHT = TIMING_WEIGHT + MELODY_WEIGHT + PROGRESSION_WEIGHT
 
 
 def get_complete_file_path(file_type, file_name, dir):
@@ -163,7 +157,7 @@ class MidiAnalyzer:
                         if instance.type == "note_on":
                             if len(active_notes) == 0 and instance.time > 0:
                                 track_notes.append(-1)
-                            track_notes.append(instance.note)
+                            track_notes.append(instance.note % 12)
                             active_notes[instance.note] = None
                         if instance.type == "note_off":
                             active_notes.pop(instance.note)
@@ -223,8 +217,6 @@ class MidiAnalyzer:
         except Exception as e:
             print(f"Exception on extracting progression sequences: {e}")
 
-
-
     # Function to map frequencies to the nearest note
     @staticmethod
     def frequency_to_note_name(frequency):
@@ -254,33 +246,76 @@ class MidiAnalyzer:
     def paired_sequences_track(self, i=0):
         return [[note] for note in self.note_sequence[i]], [[time] for time in self.timing_sequence[i]], [[prog] for prog in self.progression_sequence[i]]
 
+    @staticmethod
+    def weigh_distance(dist, consts):
+        if dist == 0:
+            return 0
+        weighted_dist = consts["multiplier"] ** (1 + (dist - consts["center_x"]) / consts["slope"]) * consts["center_y"]
+        downgrade_factor = 1 + consts["steepness"] ** ((consts["center_x"] - dist) / consts["slope"])
+
+        return weighted_dist / downgrade_factor
+
+
+    def weigh_distances(self, progression_d, note_d, timing_d):
+        weighted_progs = self.weigh_distance(progression_d, WASC["progressions"])
+        weighted_notes = self.weigh_distance(note_d, WASC["notes"])
+        weighted_timings = self.weigh_distance(timing_d, WASC["timings"])
+        return weighted_progs, weighted_notes, weighted_timings
+
+
+
     # receives instances of series of notes and relative times and finds the most similar parts
     def _closest_sequences_2(self, track1, track2):
         sliding_window_length = len(track1[0])
-        # if any(not lst for lst in track1) or any(not lst for lst in track2):
-        #     return
-        res = -1, -1
-        for i in range(len(track2[0]) - sliding_window_length + 1):
-            notes = (track1[0], track2[0][i:i + sliding_window_length])
-            timings = (track1[1], track2[1][i:i + sliding_window_length])
-            progressions = (track1[2], track2[2][i:i + sliding_window_length-1])
-            # skip empty progressions
-            if any([len(lst)==0 for lst in [notes[0], notes[1], timings[0], timings[1], progressions[0], progressions[1]]]):
-                continue
+        res = -1, -1 # set base values
 
-            # print(notes)
-            # print()
-            # print(timings)
-            # print("\n")
+        if sliding_window_length >= len(track2[0]):
+            notes = (track1[0], track2[0])
+            timings = (track1[1], track2[1])
+            progressions = (track1[2], track2[2])
+            # skip empty melodies
+            if any([len(lst)==0 for lst in [notes[0], notes[1], timings[0], timings[1], progressions[0], progressions[1]]]):
+                return res
 
             melody_dtw = fastdtw(notes[0], notes[1], dist=euclidean)
             timings_dtw = fastdtw(timings[0], timings[1], dist=euclidean)
             progressions_dtw = fastdtw(progressions[0], progressions[1], dist=euclidean)
 
-            distance = progressions_dtw[0] ** PROGRESSION_WEIGHT + melody_dtw[0] ** MELODY_WEIGHT + timings_dtw[0] ** TIMING_WEIGHT
+            p, m, t = self.weigh_distances(progressions_dtw[0], melody_dtw[0], timings_dtw[0])
 
-            if distance < res[0] or res[1] == -1:
-                res = distance, self._convert_id_to_time(i, track2[1]) # sum up all the times to get a relative time from the beginning of the track
+            weighted_distance = p * WASC["progressions"]["weight"] + m * WASC["notes"]["weight"] + t * WASC["timings"][
+                "weight"]
+
+            res = weighted_distance, 0 # return the distance at the time 0
+
+        else:
+            iterations = len(track2[0]) - sliding_window_length + 1 # the amount of checks
+            for i in range(0, iterations, max(1, iterations // 200)):
+                if i%10 == 0:
+                    write_to_log(f"Done {i} steps")
+                notes = (track1[0], track2[0][i:i + sliding_window_length])
+                timings = (track1[1], track2[1][i:i + sliding_window_length])
+                progressions = (track1[2], track2[2][i:i + sliding_window_length-1])
+                # skip empty melodies
+                if any([len(lst)==0 for lst in [notes[0], notes[1], timings[0], timings[1], progressions[0], progressions[1]]]):
+                    continue
+
+                # print(notes)
+                # print()
+                # print(timings)
+                # print("\n")
+
+                melody_dtw = fastdtw(notes[0], notes[1], dist=euclidean)[0] / sliding_window_length
+                timings_dtw = fastdtw(timings[0], timings[1], dist=euclidean)[0] / sliding_window_length
+                progressions_dtw = fastdtw(progressions[0], progressions[1], dist=euclidean)[0] / sliding_window_length
+
+                p, m, t = self.weigh_distances(progressions_dtw, melody_dtw, timings_dtw)
+
+                weighted_distance = (p * WASC["progressions"]["weight"] + m * WASC["notes"]["weight"] + t * WASC["timings"]["weight"]) / sum(w["weight"] for w in WASC.values())
+                if weighted_distance < res[0] or res[1] == -1:
+                    res = weighted_distance, self._convert_id_to_time(i, track2[1]) # sum up all the times to get a relative time from the beginning of the track
+                    print("MELODY_DTW: " + str(m) + "   TIMING_DTW: " + str(t) + "   PROG_DTW: " + str(p))
+
 
         return res
 
@@ -289,6 +324,7 @@ class MidiAnalyzer:
     def _convert_id_to_time(i, timing_sequence):
         return sum([sum(time_vector) for time_vector in timing_sequence[:i]])
 
+    # TODO: only check adjacent tracks!
     def compare_midis(self, midi_object):
         result_distance = -1, -1, -1
         user_sequences = self.paired_sequences_song()
@@ -296,7 +332,7 @@ class MidiAnalyzer:
         for i in range(len(song_sequences)):
             for j in range(len(user_sequences)):
                 track_result = self._closest_sequences_2(user_sequences[j], song_sequences[i])
-                if (track_result[0] < result_distance[0] and track_result[0]!=-1) or result_distance[0] == -1:
+                if (track_result[0] < result_distance[0] or result_distance[0] == -1) and track_result[0]!=-1:
                     result_distance = track_result[0], (i, j), track_result[1]
         return result_distance
 
@@ -306,9 +342,10 @@ class MidiAnalyzer:
         user_sequences = MidiAnalyzer.load_file(user_file)
         return user_sequences.compare_midis(song_sequences)
 
+    # Calculate similarity in percents
     @staticmethod
-    def similarity(distance: float):
-        return 100 / (1 + distance ** (1/GENERAL_WEIGHT))
+    def similarity(weighed_distance: float):
+        return 100 / (1 + weighed_distance)
 
     @classmethod
     def load_midi_from_blob(cls, blob_data):
@@ -317,20 +354,21 @@ class MidiAnalyzer:
 
     def compare_to_db(self, song_dict):
         top_matches = []
-
+        # print(song_dict)
         for (name, artist), midi_blob in song_dict.items():
             midi_object = MidiAnalyzer.load_midi_from_blob(midi_blob)
             distance, track_indices, time = self.compare_midis(midi_object)
+            print(f"DISTANCE: {distance}")
             similarity = MidiAnalyzer.similarity(distance)
 
-            # Push only if we have fewer than 20 results or the new distance is better
+            # Push only if we have fewer than 20 results or the new distance is better and the time is not -1
             if len(top_matches) < 20:
-                heapq.heappush(top_matches, (similarity, name, artist, time))
+                heapq.heappush(top_matches, (similarity, name, artist, time, track_indices))
             else:
-                heapq.heappushpop(top_matches, (similarity, name, artist, time))
+                heapq.heappushpop(top_matches, (similarity, name, artist, time, track_indices))
 
-        # Sort results by best (smallest) distance
-        return sorted(top_matches, key=lambda x: x[0])
+        # Sort results by best (biggest) similarity
+        return sorted(top_matches, key=lambda x: x[0], reverse=True)
 
 
 class AudioAnalyzer:
@@ -460,56 +498,56 @@ class AudioAnalyzer:
             self.update_midi_file(left_timestamps, left_frequencies, "C0", "C8")
         return right_frequencies, right_timestamps, left_frequencies, left_timestamps
 
-    def analyze_spice(self, time_step, keep_stamps=True):
-        model = hub.load("https://tfhub.dev/google/spice/2")
-
-        def process_channel(channel_data):
-            # Normalize audio (-1 to 1)
-            channel_data = channel_data.astype(np.float32) / np.max(np.abs(channel_data))
-
-            # Run inference
-            outputs = model.signatures["serving_default"](tf.constant(channel_data, dtype=tf.float32))
-
-            # Extract pitch estimates
-            frequencies = outputs["pitch"].numpy()
-            confidence = outputs["uncertainty"].numpy()
-            confidence = 1.0 - confidence  # Convert uncertainty to confidence
-
-            # Filter based on confidence threshold
-            valid_indices = confidence >= 0.5
-            timestamps = np.arange(len(frequencies)) * time_step  # Generate timestamps
-
-            return timestamps[valid_indices], frequencies[valid_indices]
-
-        try:
-
-            # Load the audio file
-            sample_rate, audio = wavfile.read(self.file_path)
-
-            # Ensure the sample rate is 16kHz (SPICE requires 16kHz)
-            target_sample_rate = 16000
-            if sample_rate != target_sample_rate:
-                audio = librosa.resample(audio.astype(np.float32), orig_sr=sample_rate, target_sr=target_sample_rate)
-
-            # Handle mono and stereo audio
-            if len(audio.shape) == 1:  # Mono
-                timestamps, frequencies = process_channel(audio)
-                if keep_stamps:
-                    self.update_midi_file(timestamps, frequencies, "C0", "C8")
-                return frequencies, timestamps, None, None
-
-            elif len(audio.shape) == 2:  # Stereo
-                left_timestamps, left_frequencies = process_channel(audio[:, 0])
-                right_timestamps, right_frequencies = process_channel(audio[:, 1])
-
-                if keep_stamps:
-                    self.update_midi_file(right_timestamps, right_frequencies, "C0", "C8")
-                    self.update_midi_file(left_timestamps, left_frequencies, "C0", "C8")
-
-                return right_frequencies, right_timestamps, left_frequencies, left_timestamps
-
-        except Exception as e:
-            write_to_log(f"Exception in analyze_spice: {str(e)}")
+    # def analyze_spice(self, time_step, keep_stamps=True):
+    #     model = hub.load("https://tfhub.dev/google/spice/2")
+    #
+    #     def process_channel(channel_data):
+    #         # Normalize audio (-1 to 1)
+    #         channel_data = channel_data.astype(np.float32) / np.max(np.abs(channel_data))
+    #
+    #         # Run inference
+    #         outputs = model.signatures["serving_default"](tf.constant(channel_data, dtype=tf.float32))
+    #
+    #         # Extract pitch estimates
+    #         frequencies = outputs["pitch"].numpy()
+    #         confidence = outputs["uncertainty"].numpy()
+    #         confidence = 1.0 - confidence  # Convert uncertainty to confidence
+    #
+    #         # Filter based on confidence threshold
+    #         valid_indices = confidence >= 0.5
+    #         timestamps = np.arange(len(frequencies)) * time_step  # Generate timestamps
+    #
+    #         return timestamps[valid_indices], frequencies[valid_indices]
+    #
+    #     try:
+    #
+    #         # Load the audio file
+    #         sample_rate, audio = wavfile.read(self.file_path)
+    #
+    #         # Ensure the sample rate is 16kHz (SPICE requires 16kHz)
+    #         target_sample_rate = 16000
+    #         if sample_rate != target_sample_rate:
+    #             audio = librosa.resample(audio.astype(np.float32), orig_sr=sample_rate, target_sr=target_sample_rate)
+    #
+    #         # Handle mono and stereo audio
+    #         if len(audio.shape) == 1:  # Mono
+    #             timestamps, frequencies = process_channel(audio)
+    #             if keep_stamps:
+    #                 self.update_midi_file(timestamps, frequencies, "C0", "C8")
+    #             return frequencies, timestamps, None, None
+    #
+    #         elif len(audio.shape) == 2:  # Stereo
+    #             left_timestamps, left_frequencies = process_channel(audio[:, 0])
+    #             right_timestamps, right_frequencies = process_channel(audio[:, 1])
+    #
+    #             if keep_stamps:
+    #                 self.update_midi_file(right_timestamps, right_frequencies, "C0", "C8")
+    #                 self.update_midi_file(left_timestamps, left_frequencies, "C0", "C8")
+    #
+    #             return right_frequencies, right_timestamps, left_frequencies, left_timestamps
+    #
+    #     except Exception as e:
+    #         write_to_log(f"Exception in analyze_spice: {str(e)}")
 
     def analyze_full(self, time_step=0.01, keep_stamps=True):
         try:
@@ -517,10 +555,11 @@ class AudioAnalyzer:
             self.analyze_librosa(time_step, keep_stamps)
             self.analyze_parselmouth(time_step, keep_stamps)
             self.analyze_torchcrepe(time_step, keep_stamps)
-            self.analyze_spice(time_step, keep_stamps)
+            # self.analyze_spice(time_step, keep_stamps)
             # self.analyze_librosa_hpss(time_step, keep_stamps)
         except Exception as e:
             write_to_log("Exception " + str(e))
+            return
 
     def analyze_smart1(self, stem, time_step=0.01, keep_stamps=True):
         """Apply the best tool for each stem."""

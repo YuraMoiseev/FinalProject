@@ -87,10 +87,14 @@ def create_response_and_execute_reaction(data, session_id, client_handler): # Se
         songs = fetch_songs()
         # write_to_log(f"[PROTOCOL] fetched songs: {list(songs.keys())}")
         audio_analyzer = AudioAnalyzer(file_name)
-        audio_analyzer.analyze_full(time_step=0.02)
+        audio_analyzer.analyze_crepe(time_step=0.02, keep_stamps=True)
+        write_to_log(7)
         midi_analyzer = MidiAnalyzer.load_from_audio_analyzer(audio_analyzer)
+        write_to_log(8)
         res_best = midi_analyzer.compare_to_db(songs)
+        write_to_log(9)
         os.remove(file_name)
+        write_to_log(10)
         # write_to_log(f"[PROTOCOL] 20 best songs are: {res_best}")
         return f"{res_best}"
         # except Exception as e:

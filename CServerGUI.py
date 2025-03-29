@@ -296,42 +296,71 @@ class CRequestsGUI(QMainWindow):
         request_id = self.request_table.item(x, 0)
         file_type = self.request_table.item(x, 5)
         link = self.request_table.item(x, 3)
-        try:
-            if file_type == "mp3":
-                path_mp3 = f"ServerFiles/Request_file_{request_id}_{int(time.time())}.mp3"
-                extract_file("Requests", path_mp3, request_id, "midi_audio_file", "file_type")
-                path_wav = to_wav(path_mp3)
-                os.remove(path_mp3)
-                # Separate stems
-                separator = AudioSeparator(path_wav)
-                sep_dir = separator.separate_all()
-                os.remove(path_wav)
-                # Analyze each stem and save as a whole midi file
-                analyzer = AudioAnalyzer()
-                files = os.listdir(sep_dir)
-                for filename in files:
-                    analyzer.change_base_file(os.path.join(os.getcwd(), sep_dir, filename))
-                    analyzer.analyze_smart(filename, 0.05)  # Analyse with best suiting tools for each stem
-                    os.remove(filename)
-                path_mid = analyzer.save_midi(f"Request_file_{request_id}_{int(time.time())}.mid")
-                # Save the midi file to the database
-                song_name, artist_name, requester = self.request_table.item(x, 1), self.request_table.item(x, 2), self.request_table.item(x, 6)
-                add_song(path_mid, song_name, artist_name, requester)
-                os.remove(path_mid)
-                self.delete_request(x, _)
+        if file_type == "mp3":
+            path_mp3 = f"ServerFiles/Request_file_{request_id}_{int(time.time())}.mp3"
+            extract_file("Requests", path_mp3, request_id, "midi_audio_file", "file_type")
+            path_wav = to_wav(path_mp3)
+            os.remove(path_mp3)
+            # Separate stems
+            separator = AudioSeparator(path_wav)
+            sep_dir = separator.separate_all()
+            os.remove(path_wav)
+            # Analyze each stem and save as a whole midi file
+            analyzer = AudioAnalyzer()
+            files = os.listdir(sep_dir)
+            for filename in files:
+                analyzer.change_base_file(os.path.join(os.getcwd(), sep_dir, filename))
+                analyzer.analyze_smart(filename, 0.05)  # Analyse with best suiting tools for each stem
+                os.remove(filename)
+            path_mid = analyzer.save_midi(f"Request_file_{request_id}_{int(time.time())}.mid")
+            # Save the midi file to the database
+            song_name, artist_name, requester = self.request_table.item(x, 1), self.request_table.item(x, 2), self.request_table.item(x, 6)
+            add_song(path_mid, song_name, artist_name, requester)
+            os.remove(path_mid)
+            self.delete_request(x, _)
 
-            if file_type == "wav":
-                path_wav = f"ServerFiles/Request_file_{request_id}_{int(time.time())}.wav"
-                extract_file("Requests", path_wav, request_id, "midi_audio_file", "file_type")
+        if file_type == "wav":
+            path_wav = f"ServerFiles/Request_file_{request_id}_{int(time.time())}.wav"
+            extract_file("Requests", path_wav, request_id, "midi_audio_file", "file_type")
+            # Separate stems
+            separator = AudioSeparator(path_wav)
+            sep_dir = separator.separate_all()
+            os.remove(path_wav)
+            # Analyze each stem and save as a whole midi file
+            analyzer = AudioAnalyzer()
+            for filename in os.listdir(sep_dir):
+                analyzer.change_base_file(os.path.join(os.getcwd(), sep_dir, filename))
+                analyzer.analyze_smart(filename, 0.05)  # Analyse with best suiting tools for each stem
+            path_mid = analyzer.save_midi(f"Request_file_{request_id}_{int(time.time())}.mid")
+            # Save the midi file to the database
+            song_name, artist_name, requester = self.request_table.item(x, 1), self.request_table.item(x, 2), self.request_table.item(x, 6)
+            add_song(path_mid, song_name, artist_name, requester)
+            os.remove(path_mid)
+            self.delete_request(x, _)
+            write_to_log("Song successfully added!")
+
+        elif file_type == "mid":
+            path_wav = f"ServerFiles/Request_file_{request_id}_{int(time.time())}.mid"
+            song_name, artist_name, requester = self.request_table.item(x, 1), self.request_table.item(x, 2), self.request_table.item(x, 6)
+            extract_file("Requests", path_wav, request_id, "midi_audio_file", "file_type")
+            add_song(path_wav, song_name, artist_name, requester)
+            os.remove(path_wav)
+            self.delete_request(x, _)
+            write_to_log("Song successfully added!")
+
+        elif validate_url(link):
+            extractor = AudioExtractor()
+            path_wav = extractor.download_audio(link)
+            if path_wav is not None:
                 # Separate stems
                 separator = AudioSeparator(path_wav)
                 sep_dir = separator.separate_all()
-                os.remove(path_wav)
+                # os.remove(path_wav)
                 # Analyze each stem and save as a whole midi file
                 analyzer = AudioAnalyzer()
                 for filename in os.listdir(sep_dir):
                     analyzer.change_base_file(os.path.join(os.getcwd(), sep_dir, filename))
-                    analyzer.analyze_smart(filename, 0.05)  # Analyse with best suiting tools for each stem
+                    analyzer.analyze_smart(filename, 0.05) # Analyse with best suiting tools for each stem
                 path_mid = analyzer.save_midi(f"Request_file_{request_id}_{int(time.time())}.mid")
                 # Save the midi file to the database
                 song_name, artist_name, requester = self.request_table.item(x, 1), self.request_table.item(x, 2), self.request_table.item(x, 6)
@@ -339,43 +368,11 @@ class CRequestsGUI(QMainWindow):
                 os.remove(path_mid)
                 self.delete_request(x, _)
                 write_to_log("Song successfully added!")
-
-            elif file_type == "mid":
-                path_wav = f"ServerFiles/Request_file_{request_id}_{int(time.time())}.mid"
-                song_name, artist_name, requester = self.request_table.item(x, 1), self.request_table.item(x, 2), self.request_table.item(x, 6)
-                extract_file("Requests", path_wav, request_id, "midi_audio_file", "file_type")
-                add_song(path_wav, song_name, artist_name, requester)
-                os.remove(path_wav)
-                self.delete_request(x, _)
-                write_to_log("Song successfully added!")
-
-            elif validate_url(link):
-                extractor = AudioExtractor()
-                path_wav = extractor.download_audio(link)
-                if path_wav is not None:
-                    # Separate stems
-                    separator = AudioSeparator(path_wav)
-                    sep_dir = separator.separate_all()
-                    # os.remove(path_wav)
-                    # Analyze each stem and save as a whole midi file
-                    analyzer = AudioAnalyzer()
-                    for filename in os.listdir(sep_dir):
-                        analyzer.change_base_file(os.path.join(os.getcwd(), sep_dir, filename))
-                        analyzer.analyze_smart(filename, 0.05) # Analyse with best suiting tools for each stem
-                    path_mid = analyzer.save_midi(f"Request_file_{request_id}_{int(time.time())}.mid")
-                    # Save the midi file to the database
-                    song_name, artist_name, requester = self.request_table.item(x, 1), self.request_table.item(x, 2), self.request_table.item(x, 6)
-                    add_song(path_mid, song_name, artist_name, requester)
-                    os.remove(path_mid)
-                    self.delete_request(x, _)
-                    write_to_log("Song successfully added!")
-                else:
-                    write_to_log(f"Invalid YouTube link, could not accept request {request_id}")
-
             else:
-                write_to_log(f"Invalid file type, could not accept request {request_id}")
-        except Exception as e:
-            write_to_log(f"Exception {e}")
+                write_to_log(f"Invalid YouTube link, could not accept request {request_id}")
+
+        else:
+            write_to_log(f"Invalid file type, could not accept request {request_id}")
 
 
     def update_request(self, x, _):

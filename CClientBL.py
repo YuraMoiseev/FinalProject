@@ -21,6 +21,11 @@ class CClientBL:
         self.device_id = str(uuid.getnode()) # MAC address-based ID
         self.selected_audio_device = 0
 
+
+    def refresh_session_file(self, session, file_path="session.txt"):
+        with open(file_path, "w") as f:
+            f.write(session)
+
     def connect(self) -> socket:
         try:
             self._client_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
@@ -175,6 +180,8 @@ class CClientBL:
 
 
 if __name__ == "__main__":
+    # file_path = "C:/Users\Ymois\PycharmProjects\FinalProject\MusicFiles\Audio\TestAdele.wav"
+    file_path = "C:/Users\Ymois\PycharmProjects\FinalProject\MusicFiles\Audio\RitD.wav"
     client = CClientBL(CLIENT_HOST, PORT)
     client.connect()
     # write_to_log(client.receive_data())
@@ -184,7 +191,11 @@ if __name__ == "__main__":
     # client.send_wav("test.wav")
     # client.record_wav("recording.wav")
     # client.send_wav("recording.wav")
-    client.record_wav()
-    client.send_file("recording.wav")
-    client.receive_data()
+    # client.record_wav()
+    client.send_data(SEARCH_SONG_REQUEST)
+    client.send_file(file_path)
+    a = client.receive_data()
+    b = client.receive_data()
+    write_to_log(str(a))
+    write_to_log(str(b))
     client.disconnect()

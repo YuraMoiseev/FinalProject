@@ -2,7 +2,7 @@ import sqlite3
 
 from ConstantsAndLogging import *
 from MusicalAnalysis import MidiAnalyzer
-from SecurityProtocol import hash_password, verify_password, hash_device_id
+from SecurityProtocol import hash_password, verify_password, hash_session_code, generate_session_code
 import time
 
 
@@ -109,7 +109,7 @@ def create_sessions_table():
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS Sessions (
         id INTEGER PRIMARY KEY,
-        device_id_hash TEXT,
+        session_code_hash TEXT,
         is_running BOOLEAN NOT NULL,
         last_action TIMESTAMP,
         user_id INTEGER NOT NULL,
@@ -117,7 +117,7 @@ def create_sessions_table():
     )
     """)
 
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_device ON Sessions (device_id_hash);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_device ON Sessions (session_code);")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_id ON Sessions (id);")
 
     connection.commit()
@@ -271,19 +271,19 @@ def reset_failed_attempts(user_id):
     connection.close()
 
 
-def start_session(user_id, device_id):
+def start_session(user_id, session_code):
     """Creates a new session for a user and returns the session ID."""
     connection = sqlite3.connect(DB_FILE_NAME)
     cursor = connection.cursor()
 
-    device_id_hash = hash_device_id(device_id) # Make a hash of the device id for additional security
+    session_code_hash = hash_session_code(session_code) # Make a hash of the session code for additional security
 
     timestamp = int(time.time())  # Current UNIX timestamp
 
     cursor.execute("""
-        INSERT INTO Sessions (device_id_hash, is_running, last_action, user_id) 
+        INSERT INTO Sessions (session_code_hash, is_running, last_action, user_id) 
         VALUES (?, ?, ?, ?)
-    """, (device_id_hash, True, timestamp, user_id))
+    """, (session_code_hash, True, timestamp, user_id))
 
     session_id = cursor.lastrowid  # Get the auto-incremented session ID
 
@@ -351,12 +351,13 @@ def update_last_action(session_id):
 
 def login_with_data(data):
     try:
-        username_or_email, password, device_id = data["login"], data["password"],  data["device_id"]
+        username_or_email, password = data["login"], data["password"]
         login_msg, user_id = login_client(username_or_email, password)
         is_success = login_msg == LOGIN_SUCCESS
         session_id = None
         if is_success:
-            session_id = start_session(user_id, device_id)
+            session_code = generate_session_code()
+            session_id = start_session(user_id, session_code)
 
         return login_msg, session_id
     except Exception as e:
@@ -369,10 +370,10 @@ def login_with_old_session(data):
         connection = sqlite3.connect(DB_FILE_NAME)
         cursor = connection.cursor()
 
-        device_id = data["device_id"]
+        session_code = data["session_code"]
 
-        device_id_hash = hash_device_id(device_id)
-        cursor.execute("SELECT id, is_running FROM Sessions WHERE device_id_hash = ?", (device_id_hash,))
+        session_code_hash = hash_session_code(session_code)
+        cursor.execute("SELECT id, is_running FROM Sessions WHERE session_code_hash = ?", (session_code_hash,))
         result = cursor.fetchone()
         # If the session was found, and it has not expired, log the user in
         if result is not None:

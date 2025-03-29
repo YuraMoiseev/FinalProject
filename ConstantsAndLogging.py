@@ -135,7 +135,41 @@ def literal_bool(boo:str):
 
 VirtualEnv = "C:/Users/Ymois/PycharmProjects/FinalProject/venv/Scripts/activate"
 DemucsEnv = "C:/Users/Ymois/PycharmProjects/FinalProject/demucs_env/Scripts/activate"
-"""demucs_env/Scripts/activate"""
+
+# Weighing and similarity constants
+"""
+1. Each *slope* weighed dist is multiplied by *multiplier*
+2. Forcing weighed dist at *center_x* to be equal to *center_y*
+3. Weighted additionally when combining distances
+4. Steepness - how fast the dist goes down to 0 at values smaller than the center_x (just a huge value, prolly won't need it but ehh why not ._. )
+"""
+WASC = {
+    "progressions": {
+        "slope": 2,
+        "center_x": 0.02, # correspondace percentage
+        "center_y": 0.1,
+        "weight": 25,
+        "multiplier": 3,
+        "steepness": 10
+    },
+    "notes": {
+        "slope": 5,
+        "center_x": 0.05,
+        "center_y": 0.1,
+        "weight": 10,
+        "multiplier": 2,
+        "steepness": 10
+    },
+    "timings": {
+        "slope": 0.3,
+        "center_x": 0.1,
+        "center_y": 0.1,
+        "weight": 3,
+        "multiplier": 5,
+        "steepness": 10
+    }
+}
+
 # prepare Log file
 LOG_FILE = 'LOG.log'
 logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

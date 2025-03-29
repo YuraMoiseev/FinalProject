@@ -5,6 +5,8 @@ from argon2 import PasswordHasher
 from ConstantsAndLogging import FORMAT, write_to_log, SECRET_KEY
 import hmac
 import hashlib
+import secrets
+import string
 
 def to_bytes(data):
     if not isinstance(data, bytes):
@@ -109,6 +111,12 @@ def verify_password(hashed_password, password):
         write_to_log("[SECURITY_PROTOCOL] password verification failed with exception - {}".format(e))
         return False
 
+def generate_session_code(length=16):
+    # Define possible characters (letters + digits)
+    alphabet = string.ascii_letters + string.digits
+    # Generate a random code
+    session_code = ''.join(secrets.choice(alphabet) for _ in range(length))
+    return session_code
 
-def hash_device_id(device_id):
+def hash_session_code(device_id):
     return hmac.new(SECRET_KEY, device_id.encode(), hashlib.sha256).hexdigest()
