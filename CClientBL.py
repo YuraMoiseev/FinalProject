@@ -1,10 +1,10 @@
-import time
-
 from Protocol import *
 import os
 import pyaudio
 import wave
-import uuid
+import hashlib
+import subprocess
+
 
 class CClientBL:
 
@@ -18,13 +18,51 @@ class CClientBL:
         self.serv_public_key = None
         self.is_recording = False
         self._audio_devices = None
-        self.device_id = str(uuid.getnode()) # MAC address-based ID
+        self.session_code = None
+        self.check_existing_session()
+        self.device_id = None
+        self.get_device_id()
         self.selected_audio_device = 0
 
+    def check_existing_session(self, file_path="session.txt"):
+        """Check if the file exists and is non-empty. If not, write content to it."""
+        try:
+            # Check if the file exists and is non-empty
+            if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+                with open(file_path, "r") as f:
+                    self.session_code = f.read()
+
+            else:
+                self.session_code = ''
+            return str(self.session_code)
+
+        except Exception as e:
+            print(f"[CLIENT_BL] Exception in checking existing session: {e}")
+            self.session_code = ''
+            return str(self.session_code)
 
     def refresh_session_file(self, session, file_path="session.txt"):
         with open(file_path, "w") as f:
             f.write(session)
+        self.check_existing_session(file_path)
+
+    def get_device_id(self):
+        # Get various system identifiers
+        identifiers = []
+
+        # BIOS serial
+        try:
+            result = subprocess.check_output('wmic bios get serialnumber', shell=True)
+            bios_serial = result.decode().split('\n')[1].strip()
+            if bios_serial:
+                identifiers.append(bios_serial)
+        except Exception as e:
+            write_to_log(f"Exception in creating device id - {e}")
+            raise e
+
+        hash_object = hashlib.sha256(''.join(identifiers).encode())
+        self.device_id = hash_object.hexdigest()
+        return self.device_id
 
     def connect(self) -> socket:
         try:
@@ -55,7 +93,7 @@ class CClientBL:
 
     def send_data(self, msg: str) -> bool:
         try:
-            message = create_request_msg(self.serv_public_key, msg)
+            message = create_request_msg(self.serv_public_key, msg, self.session_code, self.device_id)
             self._client_socket.send(message)
             if msg != "Update":
                 write_to_log(f"[CLIENT_BL] send {self._client_socket.getsockname()} {msg} ")
@@ -176,6 +214,8 @@ class CClientBL:
         except Exception as e:
             write_to_log("[CLIENT_BL] Exception on receive: {}".format(e))
             return ""
+
+
 
 
 

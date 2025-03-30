@@ -17,16 +17,18 @@ def best_matches(data):
     pass
 
 
-def parse_message(data):
+def parse_client_message(data):
     data = to_bytes(data)
-    data = data.decode(FORMAT)
-    if ">" in data:
-        return data[:data.index(">")], data[data.index(">")+1:]
-    return data, None
+    res = data.split(DELIMITER)
+    if len(res) != 3:
+        return None
+    session, device, cmd_with_args = res
+    if len(cmd_with_args.split(b">")) == 1:
+        return session, device, cmd_with_args, None
+    return session, device, cmd_with_args.split(b">")[0], cmd_with_args.split(b">")[1]
 
 
-def check_cmd(data):
-    cmd, args = parse_message(data)
+def check_cmd(cmd):
     if type(cmd) == bytes:
         cmd = cmd.decode(FORMAT)
     if cmd in REQUESTS_1:
@@ -38,16 +40,17 @@ def check_cmd(data):
     return 0
 
 
-def create_request_msg(public_key, data) -> str:
+def create_request_msg(public_key, data, session_id, device_id) -> str:
     """Create a valid protocol message and encrypt it using RSA, will be sent by client, with length field"""
     request = ''
-    if check_cmd(data) != 0:
+    request += session_id + DELIMITER.decode(FORMAT) + device_id + DELIMITER.decode(FORMAT)
+    if check_cmd(data.split(">")[0]) != 0:
         request += f"{data}"
     else:
-        request = f"Non-supported cmd"
+        raise Exception("I had to witness an unbelievable blasphemy.")
     request = encrypt_msg(public_key, request)
     # return f"{len(str(request)):0{HEADER_LEN}d}".encode(FORMAT) + DELIMITER  + request
-    return f"{len(request):0{HEADER_LEN}d}".encode(FORMAT) + DELIMITER  + request
+    return f"{len(request):0{HEADER_LEN}d}".encode(FORMAT) + request
 
 
 def create_response_msg(public_key, data) -> str:
@@ -72,6 +75,7 @@ def create_response_and_execute_reaction(data, session_id, client_handler): # Se
             file_type = file_name.split(".")[-1]
             if not is_recv:
                 write_to_log("Error - file count not be transferred")
+
         result = add_request(args, session_id, file_name, file_type)
         if args["file"] != "":
             os.remove(file_name)
@@ -101,43 +105,41 @@ def create_response_and_execute_reaction(data, session_id, client_handler): # Se
         #     write_to_log(f"Exception on handling song search: {e}")
         #     return "Error"
 
-    cmd, args = parse_message(data)
+    msg = [item.decode(FORMAT) if type(item) == bytes else item for item in parse_client_message(data)]
+    if msg is None:
+        return "Invalid message"
+    session, device, cmd, args = msg
     response = ""
     if args is not None:
         args = parse_args(args)
+    if cmd in SESSION_REQUESTS:
+        is_cmd_allowed = handle_session_limit(session)
+        if not is_cmd_allowed:
+            return "Invalid session"
     if check_cmd(data) == 1:
         response = REQUESTS_1[cmd]
-    elif cmd == SEARCH_SONG_REQUEST:
-        response = handle_song_search()
     elif cmd == "Register":
         response = register_client(args)
     elif cmd == "Login_with_data":
-        response, session = login_with_data(args)
-        client_handler.session = session
+        response, session_code, client_handler.session = login_with_data(args)
+        response += ">" + session_code
     elif cmd == "Login_with_session":
-        response, session = login_with_old_session(args)
-        client_handler.session = session
+        response, client_handler.session = login_with_old_session(session)
     elif cmd == "Request":
         response = handle_request_with_file()
     elif cmd == "Delete_session":
         response = delete_session(session_id)
-        client_handler.session = None
     elif cmd == "Songs":
         song_names = fetch_song_names(args)
         response = str(song_names)
+    elif cmd == SEARCH_SONG_REQUEST:
+        response = handle_song_search()
     else:
         response = "Error"
     if response == "Bye!":
         client_handler.connected = False
         toggle_session_state(session_id, False)
     return response
-
-
-def is_file_present(file_name: str) -> bool:
-    if not os.path.exists(file_name):
-        write_to_log(f"[PROTOCOL] - file does not exist: {file_name}")
-        return False
-    return True
 
 
 def get_complete_file_path(file_type, file_name, dir):
@@ -238,8 +240,9 @@ def parse_args(data: str):
 REQUESTS_1 = {"Hello": "Hello!", "Find": best_matches,
               SEND_FILE_SUCCESS: SEND_FILE_SUCCESS, SEND_FILE_FAIL: SEND_FILE_FAIL, DISCONNECT_MSG: "Bye!", "Update": "All Good", "Songs": "K"}
 
-REQUESTS_2 = ["Register", "Request", "Delete_session", SEARCH_SONG_REQUEST]
+REQUESTS_2 = {"Register", "Request", "Delete_session", SEARCH_SONG_REQUEST}
 
 
-LOGIN_REQUESTS = ["Login_with_session", "Login_with_data"]
+LOGIN_REQUESTS = {"Login_with_session", "Login_with_data"}
 
+SESSION_REQUESTS = {"Request", "Login_with_session", "Delete_session", SEARCH_SONG_REQUEST, "Upd"}

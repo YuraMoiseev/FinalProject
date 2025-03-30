@@ -345,6 +345,8 @@ class MidiAnalyzer:
     # Calculate similarity in percents
     @staticmethod
     def similarity(weighed_distance: float):
+        if weighed_distance == -1:
+            return 0
         return 100 / (1 + weighed_distance)
 
     @classmethod

@@ -1,7 +1,4 @@
 import threading
-import time
-import os
-
 from Protocol import *
 from CServerBL import CServerBL
 from PyQt5.QtWidgets import *

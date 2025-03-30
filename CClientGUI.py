@@ -1,6 +1,11 @@
 import queue
 import threading
-from Protocol import *
+
+from requests import session
+
+from ConstantsAndLogging import *
+import time
+import os
 from CClientBL import CClientBL
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import QPropertyAnimation, QSequentialAnimationGroup, QParallelAnimationGroup, QPoint, QMetaObject, \
@@ -185,9 +190,10 @@ class CClientGUI(CClientBL, QMainWindow):
 
     def on_click_login(self):
         # Check the server database for a stored hash of the device to login via an unclose session
-        data = {"device_id": self.device_id}
-        self.safe_send(f"Login_with_session>{data}")
+        self.safe_send(f"Login_with_session")
         result = self.safe_receive()
+        session_code = ""
+        result = result
         if result == LOGIN_SUCCESS:
             self.windows.clear()
             pop_up = QPopUpWidget(POP_UP_LABEL1, POP_UP_LABEL2, self)
@@ -361,14 +367,18 @@ class CLoginGUI(QDialog):
     def on_click_login(self):
         login_text = self.login_entry.text()
         password_text = self.password_entry.text()
-        data = {"login": login_text, "password": password_text, "device_id" : self._parent_wnd.device_id}
+        data = {"login": login_text, "password": password_text}
         self._parent_wnd.safe_send(f"Login_with_data>{data}")
         success = self._parent_wnd.safe_receive()
+        session = ''
+        if len(success.split(">")) > 1:
+            success, session = success.split(">")
         if success != LOGIN_SUCCESS:
             self.label_login_fail.setText(success)
             self.label_login_fail.show()
         else:
             self._parent_wnd.windows.clear()
+            self._client_object.refresh_session_file(session)
             # main_window = MainWindow(callback_home=back_home,callback_send=send)
             main_window = MainWindow(parent_wnd=self._parent_wnd)
             self._parent_wnd.windows.append(main_window)

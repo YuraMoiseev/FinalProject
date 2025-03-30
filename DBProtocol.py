@@ -117,7 +117,7 @@ def create_sessions_table():
     )
     """)
 
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_device ON Sessions (session_code);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_device ON Sessions (session_code_hash);")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_id ON Sessions (id);")
 
     connection.commit()
@@ -309,7 +309,7 @@ def delete_session(session_id):
         return "Fail"
 
 
-def handle_session_limit(session_id):
+def handle_session_limit(session_code):
     """Checks the last action of the session. Deletes if the time limit was exceeded, updates the last action if not"""
     try:
         connection = sqlite3.connect(DB_FILE_NAME)
@@ -317,10 +317,16 @@ def handle_session_limit(session_id):
 
         timestamp = int(time.time())  # Current UNIX timestamp
 
-        cursor.execute("SELECT last_action, is_running FROM Sessions WHERE id = ?", (session_id,))
-        last_action, is_running = cursor.fetchone()
+        session_code_hash = hash_session_code(session_code)
+
+        cursor.execute("SELECT last_action, is_running, id FROM Sessions WHERE session_code_hash = ?", (session_code_hash,))
+        result = cursor.fetchone()
         connection.commit()
         connection.close()
+        if result is None:
+            return False
+
+        last_action, is_running, session_id = result
 
         time_window_seconds = 1800 + 1800 * 23 * int(is_running) # create a delta of how much time the session is available based off of if it's locked or not
 
@@ -354,32 +360,32 @@ def login_with_data(data):
         username_or_email, password = data["login"], data["password"]
         login_msg, user_id = login_client(username_or_email, password)
         is_success = login_msg == LOGIN_SUCCESS
-        session_id = None
+        session_code = ""
+        session_id = -1
         if is_success:
             session_code = generate_session_code()
             session_id = start_session(user_id, session_code)
 
-        return login_msg, session_id
+        return login_msg, session_code, session_id
     except Exception as e:
         write_to_log(f"[DB_PROTOCOL] login with session failed due to the exception {e}")
-        return "", None
+        return "", "", ""
 
 
-def login_with_old_session(data):
+def login_with_old_session(session_code):
     try:
         connection = sqlite3.connect(DB_FILE_NAME)
         cursor = connection.cursor()
 
-        session_code = data["session_code"]
-
         session_code_hash = hash_session_code(session_code)
+
         cursor.execute("SELECT id, is_running FROM Sessions WHERE session_code_hash = ?", (session_code_hash,))
         result = cursor.fetchone()
         # If the session was found, and it has not expired, log the user in
         if result is not None:
             session_id = result[0]
             is_running = result[1]
-            if handle_session_limit(session_id):
+            if handle_session_limit(session_code):
                 toggle_session_state(session_id, True)
                 update_last_action(session_id)
                 return LOGIN_SUCCESS, session_id # Also save the session id for future reference
@@ -606,17 +612,6 @@ def fetch_song_names(offset=0, amount=10):
     result_dict = {song_name: artist_name for song_name, artist_name in rows}
     return result_dict
 
-
-def verify_entry_validity(username: str, email: str, password: str):
-    if any(character in username for character in INVALID_CHARACTERS):
-        return False, "Username is invalid - prohibited characters used"
-    if any(character in email for character in INVALID_CHARACTERS):
-        return False, "Email is invalid - prohibited characters used"
-    if "@" not in email:
-        return False, "Email is invalid - @?"
-    if any(character in password for character in INVALID_CHARACTERS):
-        return False, "Password is invalid - prohibited characters used"
-    return True, ""
 
 
 if __name__ == "__main__":

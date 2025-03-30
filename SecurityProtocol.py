@@ -118,5 +118,5 @@ def generate_session_code(length=16):
     session_code = ''.join(secrets.choice(alphabet) for _ in range(length))
     return session_code
 
-def hash_session_code(device_id):
-    return hmac.new(SECRET_KEY, device_id.encode(), hashlib.sha256).hexdigest()
+def hash_session_code(session_code):
+    return hmac.new(SECRET_KEY, session_code.encode(), hashlib.sha256).hexdigest()

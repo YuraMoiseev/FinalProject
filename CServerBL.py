@@ -172,7 +172,8 @@ class CClientHandler(threading.Thread):
             if valid_msg:
                 # 2. Save to log
                 if msg != b'Update':
-                    write_to_log(f"[SERVER_BL] received from {self.address} - {msg}")
+                    # write_to_log(f"[SERVER_BL] received from {self.address} - {msg}")
+                    pass
                 # 3. If valid command - create response
                 # 4. Create response
                 response = create_response_and_execute_reaction(msg, self.session, self)
@@ -190,8 +191,6 @@ class CClientHandler(threading.Thread):
                     # Done for constant refreshing of socket accepting in case of a server workflow termination
                     continue
             # 8. Check when was the last action of the session, handle respectively
-            if self.session is not None:
-                handle_session_limit(self.session)
 
         # close the client socket and invoke fire event NEW_COMMAND to delete the client from the clients' table
         self.client_socket.shutdown(socket.SHUT_RDWR)
