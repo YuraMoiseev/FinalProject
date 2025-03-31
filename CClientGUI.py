@@ -1,8 +1,5 @@
 import queue
 import threading
-
-from requests import session
-
 from ConstantsAndLogging import *
 import time
 import os

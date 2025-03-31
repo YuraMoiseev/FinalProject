@@ -1,7 +1,6 @@
 import sqlite3
 
 from ConstantsAndLogging import *
-from MusicalAnalysis import MidiAnalyzer
 from SecurityProtocol import hash_password, verify_password, hash_session_code, generate_session_code
 import time
 
@@ -615,9 +614,4 @@ def fetch_song_names(offset=0, amount=10):
 
 
 if __name__ == "__main__":
-    s = fetch_songs()
-    file = list(s.values())[0]
-    MA = MidiAnalyzer.load_midi_from_blob(file)
-    # print(MA.note_sequence)
-    # print(MA.timing_sequence)
-    # print(MA.progression_sequence)
+    pass

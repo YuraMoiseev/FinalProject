@@ -1,11 +1,11 @@
 import socket
-
-from MusicalAnalysis import AudioAnalyzer, MidiAnalyzer
 from SecurityProtocol import *
 from DBProtocol import *
 import os
 import ast
 import uuid
+from MusicalAnalysis import AudioAnalyzer, MidiAnalyzer
+
 
 def compare_melody(client_data, db_data):
     # will compare the entered melody to the melodies of some specific song in db
@@ -64,7 +64,6 @@ def create_response_msg(public_key, data) -> str:
 
 def create_response_and_execute_reaction(data, session_id, client_handler): # Session id is kept in the client handler on the server side and thus cannot be obtained from client's message
     """Create and a valid protocol message, will be sent by server, with length field"""
-
     def handle_request_with_file():
         file_name = None
         file_type = None
