@@ -1,10 +1,8 @@
 import socket
+from PacketProtocol import *
 from SecurityProtocol import *
-from DBProtocol import *
 import os
-import ast
 import uuid
-from MusicalAnalysis import AudioAnalyzer, MidiAnalyzer
 
 
 def compare_melody(client_data, db_data):
@@ -17,128 +15,30 @@ def best_matches(data):
     pass
 
 
-def parse_client_message(data):
-    data = to_bytes(data)
-    res = data.split(DELIMITER)
-    if len(res) != 3:
-        return None
-    session, device, cmd_with_args = res
-    if len(cmd_with_args.split(b">")) == 1:
-        return session, device, cmd_with_args, None
-    return session, device, cmd_with_args.split(b">")[0], cmd_with_args.split(b">")[1]
+def pack_message(packet: Packet, packet_handler: PacketHandler, enc_key: IntFlag, public_key) -> bytes:
+    try:
+        """Create a valid protocol message and encrypt it using Fernet or RSA, will be sent by client, with length field"""
+        if enc_key & DumpType.Short:
+            request_body = packet.short_dump()
+        else:
+            request_body = packet.dump()
+        if enc_key & EncryptionKey.RSA:
+            request = f"{bin(int(enc_key))[2:]:04}".encode(FORMAT) + encrypt_rsa(public_key, request_body.encode(FORMAT))
+        else:
+            request = f"{bin(int(enc_key))[2:]:04}".encode(FORMAT) + encrypt_fernet(packet_handler.fernet_key, request_body.encode(FORMAT))
+        return f"{len(request):0{HEADER_LEN}d}".encode(FORMAT) + request
+    except Exception as e:
+            write_to_log("[PROTOCOL] Exception on packing a message: {}".format(e))
+            return False
 
 
-def check_cmd(cmd):
-    if type(cmd) == bytes:
-        cmd = cmd.decode(FORMAT)
-    if cmd in REQUESTS_1:
-        return 1
-    if cmd in REQUESTS_2:
-        return 2
-    if cmd in LOGIN_REQUESTS:
-        return 3
-    return 0
-
-
-def create_request_msg(public_key, data, session_id, device_id) -> str:
-    """Create a valid protocol message and encrypt it using RSA, will be sent by client, with length field"""
-    request = ''
-    request += session_id + DELIMITER.decode(FORMAT) + device_id + DELIMITER.decode(FORMAT)
-    if check_cmd(data.split(">")[0]) != 0:
-        request += f"{data}"
-    else:
-        raise Exception("I had to witness an unbelievable blasphemy.")
-    request = encrypt_msg(public_key, request)
-    # return f"{len(str(request)):0{HEADER_LEN}d}".encode(FORMAT) + DELIMITER  + request
-    return f"{len(request):0{HEADER_LEN}d}".encode(FORMAT) + request
-
-
-def create_response_msg(public_key, data) -> str:
-    """Encrypt and make the given protocol response valid, will be sent by server, with length field"""
-    response = encrypt_msg(public_key, data)
-    if response is None:
-        response = b''
-    # return f"{len(str(response)):0{HEADER_LEN}d}".encode(FORMAT) + response
-    return f"{len(response):0{HEADER_LEN}d}".encode(FORMAT) + response
-
-
-def create_response_and_execute_reaction(data, session_id, client_handler): # Session id is kept in the client handler on the server side and thus cannot be obtained from client's message
-    """Create and a valid protocol message, will be sent by server, with length field"""
-    def handle_request_with_file():
-        file_name = None
-        file_type = None
-        if args["file"] != "":
-            write_to_log("[SERVER_BL] receiving file...")
-            # new file name is defined by how many files have been created
-            is_recv, file_name = receive_file(client_handler.client_socket, args["file"])
-            file_type = file_name.split(".")[-1]
-            if not is_recv:
-                write_to_log("Error - file count not be transferred")
-
-        result = add_request(args, session_id, file_name, file_type)
-        if args["file"] != "":
-            os.remove(file_name)
-        return result
-
-    def handle_song_search():
-        #try:
-        write_to_log("[SERVER_BL] receiving file...")
-        is_recv, file_name = receive_file(client_handler.client_socket, "wav")
-        if not is_recv:
-            write_to_log("Error - file count not be transferred")
-            return
-        songs = fetch_songs()
-        # write_to_log(f"[PROTOCOL] fetched songs: {list(songs.keys())}")
-        audio_analyzer = AudioAnalyzer(file_name)
-        audio_analyzer.analyze_crepe(time_step=0.02, keep_stamps=True)
-        write_to_log(7)
-        midi_analyzer = MidiAnalyzer.load_from_audio_analyzer(audio_analyzer)
-        write_to_log(8)
-        res_best = midi_analyzer.compare_to_db(songs)
-        write_to_log(9)
-        os.remove(file_name)
-        write_to_log(10)
-        # write_to_log(f"[PROTOCOL] 20 best songs are: {res_best}")
-        return f"{res_best}"
-        # except Exception as e:
-        #     write_to_log(f"Exception on handling song search: {e}")
-        #     return "Error"
-
-    msg = [item.decode(FORMAT) if type(item) == bytes else item for item in parse_client_message(data)]
-    if msg is None:
-        return "Invalid message"
-    session, device, cmd, args = msg
-    response = ""
-    if args is not None:
-        args = parse_args(args)
-    if cmd in SESSION_REQUESTS:
-        is_cmd_allowed = handle_session_limit(session)
-        if not is_cmd_allowed:
-            return "Invalid session"
-    if check_cmd(data) == 1:
-        response = REQUESTS_1[cmd]
-    elif cmd == "Register":
-        response = register_client(args)
-    elif cmd == "Login_with_data":
-        response, session_code, client_handler.session = login_with_data(args)
-        response += ">" + session_code
-    elif cmd == "Login_with_session":
-        response, client_handler.session = login_with_old_session(session)
-    elif cmd == "Request":
-        response = handle_request_with_file()
-    elif cmd == "Delete_session":
-        response = delete_session(session_id)
-    elif cmd == "Songs":
-        song_names = fetch_song_names(args)
-        response = str(song_names)
-    elif cmd == SEARCH_SONG_REQUEST:
-        response = handle_song_search()
-    else:
-        response = "Error"
-    if response == "Bye!":
-        client_handler.connected = False
-        toggle_session_state(session_id, False)
-    return response
+# def create_response_msg(public_key, data) -> str:
+#     """Encrypt and make the given protocol response valid, will be sent by server, with length field"""
+#     response = encrypt_rsa(public_key, data)
+#     if response is None:
+#         response = b''
+#     # return f"{len(str(response)):0{HEADER_LEN}d}".encode(FORMAT) + response
+#     return f"{len(response):0{HEADER_LEN}d}".encode(FORMAT) + response
 
 
 def get_complete_file_path(file_type, file_name, dir):
@@ -193,29 +93,29 @@ def receive_file(client_socket, file_type):
         return False, ""
 
 
-def receive_msg(my_socket: socket, private_key) -> (bool, str):
+def receive_msg(my_socket: socket, packet_handler:PacketHandler) -> tuple[bool, Packet, str]:
     """Decrypt and extract message from protocol, without the length field
        If length field does not include a number, returns False, "Error" """
     try:
-        str_header = my_socket.recv(HEADER_LEN).decode(FORMAT)
-        length = int(str_header)
+        header = my_socket.recv(HEADER_LEN).decode(FORMAT)
+        length = int(header)
         if length > 0:
-            buf_encrypted = my_socket.recv(length)
-            buf = decrypt_msg(private_key, buf_encrypted)
+            packet_str = my_socket.recv(length)
+            packet, parse_msg = packet_handler.parse(packet_str)
         else:
-            return False, "Error"
+            return False, Packet.create(msg=""), "Error"
 
-        return True, buf
+        return True, packet, parse_msg
 
     except socket.timeout:
-        return False, "Socket Timeout"
+        return False, Packet.create(msg =""), "Socket Timeout"
 
     except (socket.error, ConnectionResetError):
-        return False, "Server workflow terminated"
+        return False, Packet.create(msg =""), "Server workflow terminated"
 
     except Exception as e:
         # write_to_log("[PROTOCOL] receive msg failed with exception {}".format(e))
-        return False, e
+        return False, Packet.create(msg = ""), e
 
 
 def receive_key(my_socket:socket):
@@ -227,21 +127,4 @@ def receive_key(my_socket:socket):
         return key
 
 
-def parse_args(data: str):
-    try:
-        # Convert the string representation of a dictionary back to a Python dictionary
-        dictionary = ast.literal_eval(data)
-        return dictionary
-    except Exception as e:
-        write_to_log(f"Exception on parsing arguments {e} on data {data}")
 
-
-REQUESTS_1 = {"Hello": "Hello!", "Find": best_matches,
-              SEND_FILE_SUCCESS: SEND_FILE_SUCCESS, SEND_FILE_FAIL: SEND_FILE_FAIL, DISCONNECT_MSG: "Bye!", "Update": "All Good", "Songs": "K"}
-
-REQUESTS_2 = {"Register", "Request", "Delete_session", SEARCH_SONG_REQUEST}
-
-
-LOGIN_REQUESTS = {"Login_with_session", "Login_with_data"}
-
-SESSION_REQUESTS = {"Request", "Login_with_session", "Delete_session", SEARCH_SONG_REQUEST, "Upd"}

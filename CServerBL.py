@@ -1,5 +1,8 @@
 import threading
 from Protocol import *
+from PacketProtocol import *
+from RequestProtocol import *
+
 
 # events
 NEW_CONNECTION: int = 1
@@ -22,6 +25,8 @@ class CServerBL:
         self._server_socket = None
         self._is_srv_running = True
         self._client_handlers = []
+        # TODO: add request packets, pop when done with the current
+        self.pending_requests = []
 
     def fire_event(self, enum_even: int, client_handle, args: str):
         pass
@@ -102,20 +107,21 @@ class CClientHandler(threading.Thread):
         self.callback = fn
         self.client_public_key = None
         self._private_key = create_private_key()
+        self.packet_handler = PacketHandler(Agent.Server, self._private_key, None)
+        self.key_rotation_countdown = 0
         self.connected = False
         self.session = None
 
-    def exchange_keys(self):
+    def exchange_rsa_keys(self):
         key = load_pem(self._private_key.public_key())
         self.client_public_key = receive_key(self.client_socket)
         self.client_socket.send(f"{len(str(key)):0{HEADER_LEN}d}{key.decode()}".encode(FORMAT))
+        
 
     def close_socket(self):
         self.connected = False
         if self.client_socket is not None:
-            self.client_socket.send(
-                create_response_msg(self.client_public_key, create_response_and_execute_reaction(DISCONNECT_MSG, self.session, self))
-            )
+            self.client_socket.send(pack_message(create_response_and_execute_reaction(DISCONNECT_MSG, self.session, self), self.packet_handler, Agent.Server, self.client_public_key))
 
 
     # TODO: move to protocol with socket as an argument
@@ -163,34 +169,42 @@ class CClientHandler(threading.Thread):
 
     def run(self):
         # This code run in separate thread for every client
-        self.exchange_keys()
+        self.exchange_rsa_keys()
         self.connected = True
         self.client_socket.settimeout(0.001)
         while self.connected:
             # 1. Get message from socket and check it
-            valid_msg, msg = receive_msg(self.client_socket, self._private_key)
+            valid_msg, packet, parse_msg = receive_msg(self.client_socket, self.packet_handler)
             if valid_msg:
+                if packet is None or type(packet) != Packet:
+                    write_to_log(f"[SERVER_BL] error on receiving packet - {packet}, {parse_msg}")
+                    continue
                 # 2. Save to log
-                if msg != b'Update':
-                    # write_to_log(f"[SERVER_BL] received from {self.address} - {msg}")
-                    pass
+                write_to_log(f"[SERVER_BL] received from {self.address} - {packet}")
+                if "session_token" in packet.header:
+                    write_to_log(f"[SERVER_BL] received session - {packet.header['session_token']}")
                 # 3. If valid command - create response
                 # 4. Create response
-                response = create_response_and_execute_reaction(msg, self.session, self)
+                response_packet = create_response_and_execute_reaction(packet, self.session, self)
                 # 5. If registration is requested, invoke fire event on REGISTER_REQUEST
-                if response == REG_MSG:
-                    self.callback(REGISTER_REQUEST, self.address, msg[4:])
+                if response_packet.body['msg'] == REG_MSG:
+                    self.callback(REGISTER_REQUEST, self.address, response_packet.body['msg'])
                     write_to_log("[SERVER_BL] REGISTER_REQUEST invoked")
                 # 6. Save to log
-                if response != "All Good":
-                    write_to_log(f"[SERVER_BL] send - {response}")
                 # 7. Send response to the client
-                self.client_socket.send(create_response_msg(self.client_public_key, response))
-            if msg == "Socket Timeout":
+                enc_type = EncryptionKey.Fernet | DumpType.Regular
+                if packet.body["msg"].strip() == "Rotate_key":
+                    enc_type = EncryptionKey.RSA | DumpType.Short | MsgType.Key
+                
+                write_to_log(f"Server is about ot send {response_packet}")
+
+                self.client_socket.send(pack_message(response_packet, self.packet_handler, enc_type, self.client_public_key))
+            if packet.body['msg'] == "Socket Timeout":
                 if not self.connected:
                     # Done for constant refreshing of socket accepting in case of a server workflow termination
                     continue
             # 8. Check when was the last action of the session, handle respectively
+
 
         # close the client socket and invoke fire event NEW_COMMAND to delete the client from the clients' table
         self.client_socket.shutdown(socket.SHUT_RDWR)

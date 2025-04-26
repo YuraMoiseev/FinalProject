@@ -4,7 +4,7 @@ import pyaudio
 import wave
 import hashlib
 import subprocess
-
+from PacketProtocol import *
 
 class CClientBL:
 
@@ -15,31 +15,35 @@ class CClientBL:
         self._port = port
 
         self._private_key = create_private_key()
+        self.packet_handler = PacketHandler(Agent.Client, self._private_key, None)
+        self.session_token = SessionToken()
         self.serv_public_key = None
         self.is_recording = False
         self._audio_devices = None
-        self.session_code = None
         self.check_existing_session()
-        self.device_id = None
         self.get_device_id()
         self.selected_audio_device = 0
+        # TODO: add request packets, pop when the responce arrives
+        self.pending_requests = set()
+        self.key_rotation_countdown = 0
 
+    # TODO FIX!!!
     def check_existing_session(self, file_path="session.txt"):
         """Check if the file exists and is non-empty. If not, write content to it."""
         try:
             # Check if the file exists and is non-empty
             if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
                 with open(file_path, "r") as f:
-                    self.session_code = f.read()
+                    self.session_token.session_code = f.read()
 
             else:
-                self.session_code = ''
-            return str(self.session_code)
+                self.session_token.session_code = ''
+            return str(self.session_token.session_code)
 
         except Exception as e:
             print(f"[CLIENT_BL] Exception in checking existing session: {e}")
-            self.session_code = ''
-            return str(self.session_code)
+            self.session_token.session_code = ''
+            return str(self.session_token.session_code)
 
     def refresh_session_file(self, session, file_path="session.txt"):
         with open(file_path, "w") as f:
@@ -70,13 +74,13 @@ class CClientBL:
             self._client_socket.connect((self._host,self._port))
             write_to_log(f"[CLIENT_BL] {self._client_socket.getsockname()} connected")
             # self._client_socket.send(self._private_key.public_key())
-            self.exchange_keys()
+            self.exchange_rsa_keys()
             return self._client_socket
         except Exception as e:
             write_to_log("[CLIENT_BL] Exception on connect: {}".format(e))
             return None
 
-    def exchange_keys(self):
+    def exchange_rsa_keys(self):
         key = load_pem(self._private_key.public_key())
         self._client_socket.send(f"{len(str(key)):0{HEADER_LEN}d}{key.decode(FORMAT)}".encode(FORMAT))
         self.serv_public_key = receive_key(self._client_socket)
@@ -90,18 +94,54 @@ class CClientBL:
         except Exception as e:
             write_to_log("[CLIENT_BL] Exception on disconnect: {}".format(e))
             return False
+        
+    def rotate_symmetric_keys(self):
+        try: 
+            # Send a request to server to rotate the symmetric key. The key change is handled automatically by the packet handler
+            key_message_packet = Packet.create(packet_type=Agent.Client | MsgType.Regular, session_token=self.session_token, msg="Rotate_key")
+            key_message = pack_message(key_message_packet, self.packet_handler, EncryptionKey.RSA | DumpType.Short, self.serv_public_key)
+            self._client_socket.send(key_message)
+            self.receive_data(True)
+            self.key_rotation_countdown = KEY_ROTATION_COUNTDOWN
+        except Exception as e:
+            write_to_log("[CLIENT_BL] Exception on rotating keys: {}".format(e))
+            return False
 
-    def send_data(self, msg: str) -> bool:
+    def send_data(self, msg: str, args: dict) -> bool:
         try:
-            message = create_request_msg(self.serv_public_key, msg, self.session_code, self.device_id)
+            # Rotate keys if needed
+            if self.key_rotation_countdown == 0:
+                self.rotate_symmetric_keys()
+            # Create a packet and dump it into a string
+            message_packet = Packet.create(session_token=self.session_token, msg=msg, args=args)
+            self.pending_requests.add(message_packet.header["packet_id"])
+            message = pack_message(message_packet, self.packet_handler, EncryptionKey.Fernet | DumpType.Regular, self.serv_public_key)
+            write_to_log(f"Client is about to send {message.decode()}")
             self._client_socket.send(message)
-            if msg != "Update":
-                write_to_log(f"[CLIENT_BL] send {self._client_socket.getsockname()} {msg} ")
+            self.key_rotation_countdown -= 1
             return True
         except Exception as e:
             write_to_log("[CLIENT_BL] Exception on send_data: {}".format(e))
             write_to_log(msg)
             return False
+        
+    def receive_data(self, ignore_id=False) -> Packet:
+        try:
+            (bres, packet, parse_msg) = receive_msg(self._client_socket, self.packet_handler)
+            print(packet)
+            if bres:
+                write_to_log(f"[CLIENT_BL] received {self._client_socket.getsockname()} {packet.body['msg']} with parse message {parse_msg}")
+                if not ignore_id:
+                    self.delete_request(packet.body["id"])
+                return packet
+            else:
+                if not ignore_id:
+                    self.delete_request(packet.body["id"])
+                write_to_log(f"[CLIENT_BL] error on receiving data - {packet.body['msg']} with parse message {parse_msg}")
+                return packet
+        except Exception as e:
+            write_to_log("[CLIENT_BL] Exception on receive: {}".format(e))
+            return Packet.create(msg="Exception")
 
     def cond(self):
         self.is_recording = not self.is_recording
@@ -152,6 +192,15 @@ class CClientBL:
             self._client_socket.send(f"{0}\n".encode())
             self._client_socket.send(b"0")
             return False
+        
+    def delete_request(self, packet_id: str):
+        try: 
+            if packet_id not in self.pending_requests:
+                raise Exception("Error on removing request - unknown request id")
+            self.pending_requests.remove(packet_id)
+        except Exception as e:
+            write_to_log(f"Error on removing request - {e}")
+
 
     def record_wav(self, file_name: str = "recording.wav") -> bool:
         try:
@@ -201,24 +250,8 @@ class CClientBL:
             write_to_log("[CLIENT_BL] Exception on record_wav: {}".format(e))
             return False
 
-    def receive_data(self) -> str:
-        try:
-            (bres, msg) = receive_msg(self._client_socket, self._private_key)
-            if bres:
-                if msg.decode(FORMAT) != "All Good":
-                    write_to_log(f"[CLIENT_BL] received {self._client_socket.getsockname()} {msg.decode(FORMAT)} ")
-                return msg.decode(FORMAT)
-            else:
-                write_to_log(f"[CLIENT_BL] error - {msg}")
-                return msg
-        except Exception as e:
-            write_to_log("[CLIENT_BL] Exception on receive: {}".format(e))
-            return ""
 
-
-
-
-
+import time
 if __name__ == "__main__":
     # file_path = "C:/Users\Ymois\PycharmProjects\FinalProject\MusicFiles\Audio\TestAdele.wav"
     file_path = "C:/Users\Ymois\PycharmProjects\FinalProject\MusicFiles\Audio\RitD.wav"
@@ -232,10 +265,13 @@ if __name__ == "__main__":
     # client.record_wav("recording.wav")
     # client.send_wav("recording.wav")
     # client.record_wav()
-    client.send_data(SEARCH_SONG_REQUEST)
-    client.send_file(file_path)
+    time.sleep(1)
+    client.send_data(f"Login_with_session", {})
+    time.sleep(1)
     a = client.receive_data()
-    b = client.receive_data()
+    time.sleep(1)
     write_to_log(str(a))
-    write_to_log(str(b))
+    time.sleep(1)
     client.disconnect()
+
+

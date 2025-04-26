@@ -327,7 +327,7 @@ def handle_session_limit(session_code):
 
         last_action, is_running, session_id = result
 
-        time_window_seconds = 1800 + 1800 * 23 * int(is_running) # create a delta of how much time the session is available based off of if it's locked or not
+        time_window_seconds = 1800 + 1800 * 23 * int(is_running) # create a delta of how much time the session is available based off of its state
 
         if last_action + time_window_seconds < timestamp:
             delete_session(session_id)
@@ -385,23 +385,27 @@ def login_with_old_session(session_code):
             session_id = result[0]
             is_running = result[1]
             if handle_session_limit(session_code):
+                # Update the session identifier to prevent hijaking
+                new_session_code = generate_session_code()
+                new_code_hash = hash_session_code(new_session_code)
+                cursor.execute("UPDATE Sessions SET session_code_hash = ? WHERE session_code_hash = ?", (new_code_hash, session_code_hash))
                 toggle_session_state(session_id, True)
                 update_last_action(session_id)
-                return LOGIN_SUCCESS, session_id # Also save the session id for future reference
+                return LOGIN_SUCCESS, new_session_code, session_id # Also save the session id for future reference
             elif is_running:
-                return LOGIN_FAIL + " - the session is already taken", None
+                return LOGIN_FAIL + " - the session is already taken", "", None
             else:
-                return LOGIN_FAIL + " - the session has expired", None
+                return LOGIN_FAIL + " - the session has expired", "", None
         # Else block the user from entering
         else:
-            return LOGIN_FAIL + " - session was not found", None
+            return LOGIN_FAIL + " - session was not found", "", None
 
     except Exception as e:
         write_to_log(f"[DB_PROTOCOL] login with old session failed due to the exception {e}")
-        return "", None
+        return "", "", None
 
 
-def add_request(data, session_id, file_path=None, file_type=None):
+def add_request(data, session_id, file_path=None, file_type=None) -> str:
     try:
         song_name, artist_name, link, description = data["name"], data["artist"], data["link"], data["description"]
         # Connect to the database
@@ -433,7 +437,7 @@ def add_request(data, session_id, file_path=None, file_type=None):
         return "Fail"
 
 
-def update_request(data, file_path=None, file_type=None):
+def update_request(data, file_path=None, file_type=None) -> str:
     try:
         song_name, artist_name, link, description, request_id, file_type = data["name"], data["artist"], data["link"], data["description"], data["id"], data["file_type"]
         # Connect to the database

@@ -1,6 +1,7 @@
 from cryptography.hazmat.primitives.asymmetric import rsa,padding
 from cryptography.hazmat.primitives import serialization,hashes
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
+from cryptography.fernet import Fernet
 from argon2 import PasswordHasher
 from ConstantsAndLogging import FORMAT, write_to_log, SECRET_KEY
 import hmac
@@ -50,7 +51,7 @@ def verify_signature(public_key, signature, data):
     except Exception as e:
         write_to_log("[SECURITY_PROTOCOL] signature verification failed with exception {}".format(e))
 
-def encrypt_msg(public_key, data):
+def encrypt_rsa(public_key, data):
     try:
         data = to_bytes(data)
         # Encrypt the message
@@ -64,9 +65,9 @@ def encrypt_msg(public_key, data):
         )
         return encrypted_data
     except Exception as e:
-        write_to_log("[SECURITY_PROTOCOL] message encryption failed with exception {}".format(e))
+        write_to_log("[SECURITY_PROTOCOL] message encryption (RSA) failed with exception {}".format(e))
 
-def decrypt_msg(private_key, encrypted_data):
+def decrypt_rsa(private_key, encrypted_data):
     try:
         encrypt_data = to_bytes(encrypted_data)
         # Decrypt the message
@@ -80,7 +81,7 @@ def decrypt_msg(private_key, encrypted_data):
         )
         return decrypted_data
     except Exception as e:
-        write_to_log(f"[SECURITY_PROTOCOL] message decryption failed with exception {e} with data {encrypted_data}")
+        write_to_log(f"[SECURITY_PROTOCOL] message decryption (RSA) failed with exception {e} with data {encrypted_data}")
         return "Error"
 
 def load_pem(public_key):
@@ -120,3 +121,44 @@ def generate_session_code(length=16):
 
 def hash_session_code(session_code):
     return hmac.new(SECRET_KEY, session_code.encode(), hashlib.sha256).hexdigest()
+
+
+def generate_fernet_key():
+    return Fernet.generate_key()
+
+
+def encrypt_fernet(fernet_key: bytes, data: bytes) -> bytes:
+    """
+    Encrypts the given data using the provided Fernet key.
+    
+    Args:
+        fernet_key: A Fernet key (must be 32 url-safe base64-encoded bytes).
+        data: The data to encrypt (as bytes).
+    
+    Returns:
+        The encrypted data (ciphertext) as bytes.
+    """
+    try:
+        f = Fernet(fernet_key)
+        encrypted_data = f.encrypt(data)
+        return encrypted_data
+    except Exception as e:
+        write_to_log("[SECURITY_PROTOCOL] message encryption (Fernet) failed with exception {}".format(e))
+
+def decrypt_fernet(fernet_key: bytes, encrypted_data: bytes) -> bytes:
+    """
+    Decrypts the given encrypted data using the provided Fernet key.
+    
+    Args:
+        fernet_key: A Fernet key (must be 32 url-safe base64-encoded bytes).
+        encrypted_data: The encrypted data (as bytes).
+    
+    Returns:
+        The decrypted data (plaintext) as bytes.
+    """
+    try:
+        f = Fernet(fernet_key)
+        decrypted_data = f.decrypt(encrypted_data)
+        return decrypted_data
+    except Exception as e:
+        write_to_log("[SECURITY_PROTOCOL] message encryption (Fernet) failed with exception {}".format(e))

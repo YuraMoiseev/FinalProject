@@ -189,12 +189,13 @@ class CClientGUI(CClientBL, QMainWindow):
         # Check the server database for a stored hash of the device to login via an unclose session
         self.safe_send(f"Login_with_session")
         result = self.safe_receive()
-        session_code = ""
-        result = result
+        success, session_code = result.body["msg"], result.body["session"]
         if result == LOGIN_SUCCESS:
             self.windows.clear()
             pop_up = QPopUpWidget(POP_UP_LABEL1, POP_UP_LABEL2, self)
             if pop_up.exec_():
+                self.refresh_session_file(session_code)
+                self.check_existing_session()
                 self.windows.append(MainWindow(parent_wnd=self))
                 self.hide()
             else:
@@ -225,8 +226,8 @@ class CClientGUI(CClientBL, QMainWindow):
             time.sleep(1)
 
     # terminates the workflow in case of an exception arising
-    def safe_send(self, data):
-        is_sent = self.send_data(data)
+    def safe_send(self, data, args: dict = {}):
+        is_sent = self.send_data(data, args)
         if not is_sent:
             self.forced_termination()
         else:
@@ -235,7 +236,7 @@ class CClientGUI(CClientBL, QMainWindow):
     # terminates the workflow in case of an exception arising
     def safe_receive(self):
         receive = self.receive_data()
-        if any(substring in receive for substring in ERROR_MSGS):
+        if receive.body["msg"] in ERROR_MSGS:
             self.forced_termination()
         else:
             return receive
@@ -353,7 +354,7 @@ class CLoginGUI(QDialog):
             self.label_reg_fail.setText(validity[1])
         else:
             data = {"login": login, "email": email, "password": password}
-            self._parent_wnd.safe_send(f"Register>{data}")
+            self._parent_wnd.safe_send(f"Register", data)
             result = self._parent_wnd.safe_receive()
             if result != REG_SUCCESS:
                 self.label_reg_fail.show()
@@ -365,11 +366,10 @@ class CLoginGUI(QDialog):
         login_text = self.login_entry.text()
         password_text = self.password_entry.text()
         data = {"login": login_text, "password": password_text}
-        self._parent_wnd.safe_send(f"Login_with_data>{data}")
-        success = self._parent_wnd.safe_receive()
-        session = ''
-        if len(success.split(">")) > 1:
-            success, session = success.split(">")
+        self._parent_wnd.safe_send(f"Login_with_data", data)
+        message = self._parent_wnd.safe_receive()
+        print(message)
+        success, session = message.body["msg"], message.body["session"]
         if success != LOGIN_SUCCESS:
             self.label_login_fail.setText(success)
             self.label_login_fail.show()
@@ -720,8 +720,8 @@ class RequestWindow(QMainWindow):
                 "file": file_type
             }
             # data = {key:("" if value is None else value) for key, value in data.items()}
-            self._client_object.safe_send(f"Request>{data}")
-            write_to_log(f"Request>{data}")
+            self._client_object.safe_send(f"Request", data)
+            # write_to_log(f"Request>{data}")
             if self.file_drop.chosen_file_path is not None:
                 result = self._client_object.send_file(self.file_drop.chosen_file_path)
             else:

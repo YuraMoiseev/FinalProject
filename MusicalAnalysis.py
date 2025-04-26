@@ -21,8 +21,10 @@ import re
 import librosa.feature
 from pydub import AudioSegment
 from ConstantsAndLogging import write_to_log, WASC
+import math
 import tensorflow as tf
 import tensorflow_hub as hub
+from rust_code import MidiDTW, MIDITrack
 
 
 def get_complete_file_path(file_type, file_name, dir):
@@ -117,7 +119,6 @@ class MidiAnalyzer:
         self.timing_sequence = self.timing_sequences()
         self.progression_sequence = self.progression_sequences()
 
-
     @classmethod
     def load_file(cls, file_name):
         # Preprocess inputs and call __init__
@@ -201,7 +202,7 @@ class MidiAnalyzer:
                 last_note = None
                 for note in sequence:
                     if note == -1:
-                        continue
+                        track.append(0)
                     if last_note is None:
                         last_note = note
                     elif last_note < note:
@@ -248,20 +249,22 @@ class MidiAnalyzer:
 
     @staticmethod
     def weigh_distance(dist, consts):
-        if dist == 0:
-            return 0
-        weighted_dist = consts["multiplier"] ** (1 + (dist - consts["center_x"]) / consts["slope"]) * consts["center_y"]
-        downgrade_factor = 1 + consts["steepness"] ** ((consts["center_x"] - dist) / consts["slope"])
+        try:
+            weighted_dist = consts["a"] ** (1 + (dist - consts["x0"]) / consts["s"])
+            first_correcting_factor = 1 / (1 + consts["b"] ** ((consts["x0"] - dist) / consts["s"]))
+            second_correcting_factor = 2 / (1 + math.e ** (2 * (-dist))) - 1
+            third_correcting_factor = 2 * consts["y0"] * (1 + math.e ** (2 * (-consts["x0"]))) / (1 - math.e ** (2 * (-consts["x0"])))
 
-        return weighted_dist / downgrade_factor
+            return weighted_dist * first_correcting_factor * second_correcting_factor * third_correcting_factor
+        except Exception:
+            return math.inf
 
 
     def weigh_distances(self, progression_d, note_d, timing_d):
-        weighted_progs = self.weigh_distance(progression_d, WASC["progressions"])
-        weighted_notes = self.weigh_distance(note_d, WASC["notes"])
-        weighted_timings = self.weigh_distance(timing_d, WASC["timings"])
+        weighted_progs = self.weigh_distance(progression_d, WASC["d"])
+        weighted_notes = self.weigh_distance(note_d, WASC["n"])
+        weighted_timings = self.weigh_distance(timing_d, WASC["t"])
         return weighted_progs, weighted_notes, weighted_timings
-
 
 
     # receives instances of series of notes and relative times and finds the most similar parts
@@ -283,16 +286,18 @@ class MidiAnalyzer:
 
             p, m, t = self.weigh_distances(progressions_dtw[0], melody_dtw[0], timings_dtw[0])
 
-            weighted_distance = p * WASC["progressions"]["weight"] + m * WASC["notes"]["weight"] + t * WASC["timings"][
-                "weight"]
+            weighted_distance = p * WASC["d"]["w"] + m * WASC["n"]["w"] + t * WASC["t"]["w"]
 
             res = weighted_distance, 0 # return the distance at the time 0
 
         else:
             iterations = len(track2[0]) - sliding_window_length + 1 # the amount of checks
-            for i in range(0, iterations, max(1, iterations // 200)):
-                if i%10 == 0:
-                    write_to_log(f"Done {i} steps")
+            last_printed = 0
+            for i in range(0, iterations):  #, max(1, iterations//200)):    
+                percent = (i+1)*100//iterations    
+                if  percent % 10 == 0 and percent > last_printed:
+                    write_to_log(f"Done {percent}%...")
+                    last_printed = percent
                 notes = (track1[0], track2[0][i:i + sliding_window_length])
                 timings = (track1[1], track2[1][i:i + sliding_window_length])
                 progressions = (track1[2], track2[2][i:i + sliding_window_length-1])
@@ -311,14 +316,14 @@ class MidiAnalyzer:
 
                 p, m, t = self.weigh_distances(progressions_dtw, melody_dtw, timings_dtw)
 
-                weighted_distance = (p * WASC["progressions"]["weight"] + m * WASC["notes"]["weight"] + t * WASC["timings"]["weight"]) / sum(w["weight"] for w in WASC.values())
+                weighted_distance = (p * WASC["d"]["w"] + m * WASC["n"]["w"] + t * WASC["t"]["w"]) / (WASC["d"]["w"] + WASC["n"]["w"] + WASC["t"]["w"])
                 if weighted_distance < res[0] or res[1] == -1:
                     res = weighted_distance, self._convert_id_to_time(i, track2[1]) # sum up all the times to get a relative time from the beginning of the track
-                    print("MELODY_DTW: " + str(m) + "   TIMING_DTW: " + str(t) + "   PROG_DTW: " + str(p))
+                    print("MELODY_DTW: " + str(m) + "   TIMING_DTW: " + str(t) + "   PROG_DTW: " + str(p) + "   AT TIME: " + str(res[1]))
+
 
 
         return res
-
 
     @staticmethod
     def _convert_id_to_time(i, timing_sequence):
@@ -341,6 +346,19 @@ class MidiAnalyzer:
         song_sequences = MidiAnalyzer.load_file(song_file)
         user_sequences = MidiAnalyzer.load_file(user_file)
         return user_sequences.compare_midis(song_sequences)
+    
+    def paired_sequences_song_rust(self):
+        return [self.paired_sequences_track_rust(i) for i in range(len(self.midi.tracks))]
+
+    def paired_sequences_track_rust(self, i=0):
+        return MIDITrack(self.note_sequence[i], self.timing_sequence[i], self.progression_sequence[i])
+    
+    def compare_midis_rust(self, midi_object):
+        user_sequences = self.paired_sequences_song_rust()
+        song_sequences = midi_object.paired_sequences_song_rust()
+        comparator = MidiDTW()
+        return comparator.compare_midis(user_sequences, song_sequences)
+
 
     # Calculate similarity in percents
     @staticmethod
@@ -360,6 +378,25 @@ class MidiAnalyzer:
         for (name, artist), midi_blob in song_dict.items():
             midi_object = MidiAnalyzer.load_midi_from_blob(midi_blob)
             distance, track_indices, time = self.compare_midis(midi_object)
+            print(f"DISTANCE: {distance}")
+            similarity = MidiAnalyzer.similarity(distance)
+
+            # Push only if we have fewer than 20 results or the new distance is better and the time is not -1
+            if len(top_matches) < 20:
+                heapq.heappush(top_matches, (similarity, name, artist, time, track_indices))
+            else:
+                heapq.heappushpop(top_matches, (similarity, name, artist, time, track_indices))
+
+        # Sort results by best (biggest) similarity
+        return sorted(top_matches, key=lambda x: x[0], reverse=True)
+    
+
+    def compare_to_db_rust(self, song_dict):
+        top_matches = []
+        # print(song_dict)
+        for (name, artist), midi_blob in song_dict.items():
+            midi_object = MidiAnalyzer.load_midi_from_blob(midi_blob)
+            distance, track_indices, time = self.compare_midis_rust(midi_object)
             print(f"DISTANCE: {distance}")
             similarity = MidiAnalyzer.similarity(distance)
 
@@ -424,8 +461,9 @@ class AudioAnalyzer:
             self.update_midi_file(timestamps, pitch_values, "C0", "C8")
         return pitch_values, timestamps
 
-    def analyze_torchcrepe(self, audio_path, time_step, keep_stamps=True):
+    def analyze_torchcrepe(self, time_step, keep_stamps=True):
         try:
+            audio_path = self.file_path
             # Load and preprocess audio
             audio, sr = librosa.load(audio_path, sr=16000)
 
@@ -770,17 +808,31 @@ class AudioSeparator:
 # AA.save_midi(midi_file)
 if __name__ == "__main__":
     # file = "C:/Users/Ymois/PycharmProjects/FinalProject/ServerFiles/Audio_ba4a7e78c4bc4aada61169f1c2a89995.wav"
-    file = "C:/Users\Ymois\PycharmProjects\FinalProject\MusicFiles\Audio\Melody.mp3"
+    file = "C:/Users\Ymois\PycharmProjects\FinalProject\MusicFiles\Audio\DT-The-Best-Of-Times-Solo.wav"
 
     AA = AudioAnalyzer(file)
-    AA.analyze_torchcrepe(file, 0.01, True)
-    midi = AA.midi_object
-    for t in midi.tracks:
-        for m in t:
-            print(m)
+    AA.analyze_crepe(0.5, True)
+    AA.analyze_librosa(0.5, True)
+    MA1 = MidiAnalyzer.load_from_audio_analyzer(AA)
 
-    AA.save_midi("MOP_FINAL1.mid")
+    AA2 = AudioAnalyzer(file)
+    AA2.analyze_torchcrepe(file, 0.5, True)
+    MA2 = MidiAnalyzer.load_from_audio_analyzer(AA2)
+    import time
+    start = time.time()
+    a1 = MA2.compare_midis_rust(MA1)
+    print("rust result:" + str(a1))
+    print("rust runtime (with python api overhead):" + str(time.time()-start))
+    start1 = time.time()
+    a2 = MA2.compare_midis(MA1)
+    print("python result:" + str(a2))
+    print("python runtime:" + str(time.time()-start1))
+    print("rust similarity:" + str(MA1.similarity(a1[0])) + "   python similarity:" + str(MA1.similarity(a2[0])))
 
+    # track1 = MIDITrack([1, 1, 3, 2, 5, 6], [0, 0.2, 0.3, 0.1, 0.5], [0, 1, -1, 1, 1])
+    # track2 = MIDITrack([0, 4, 2, 3, 11, 6], [0, 0.2, 0.3, 0.5, 0.1], [1, -1, 1, 1, -1])
+    # a1 = MidiDTW().compare_tracks(track1, track2)
+    # print("rust result:" + str(a1))
 
 # best_distance, best_position = compare_melodies_2(midi2, midi1)
 # print(f"Best match found at position {best_position} with similarity {similarity(best_distance)}%")

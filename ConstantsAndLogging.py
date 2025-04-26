@@ -29,9 +29,12 @@ POP_UP_LABEL1: str = "There has been found a session associated with your device
 POP_UP_LABEL2: str = "Choose one of the options!"
 POP_UP_LABEL3: str = "Do you want to save the existing session to log into the account without having to enter user data?"
 
+KEY_ROTATION_COUNTDOWN: int = 100
+
 ERROR_MSGS = ["Error", "error", "Server workflow terminated"]
 
 DELIMITER = b"||"
+SESSION_TOKEN_DELIMITER = "_"
 
 BUTTON_STYLE_SHEET: str = '''QPushButton {
                     font: 14pt "Arial";
@@ -139,35 +142,36 @@ DemucsEnv = "C:/Users/Ymois/PycharmProjects/FinalProject/demucs_env/Scripts/acti
 
 # Weighing and similarity constants
 """
-1. Each *slope* weighed dist is multiplied by *multiplier*
-2. Forcing weighed dist at *center_x* to be equal to *center_y*
+For deeper understanding and reasoning behind the constants - please read the MelodyComparison.pdf file
+1. Each *s* weighed dist is multiplied by *b*
+2. Forcing weighed dist at *x0* to be equal to *y0*
 3. Weighted additionally when combining distances
-4. Steepness - how fast the dist goes down to 0 at values smaller than the center_x (just a huge value, prolly won't need it but ehh why not ._. )
+4. a - how fast the dist goes down to 0 at values smaller than the x0 (just a huge value, prolly won't need it but ehh why not ._. )
 """
 WASC = {
-    "progressions": {
-        "slope": 2,
-        "center_x": 0.02, # correspondace percentage
-        "center_y": 0.1,
-        "weight": 25,
-        "multiplier": 3,
-        "steepness": 10
+    "d": {
+        "s": 2,
+        "x0": 0.02,
+        "y0": 0.1,
+        "w": 25,
+        "a": 3,
+        "b": 10
     },
-    "notes": {
-        "slope": 5,
-        "center_x": 0.05,
-        "center_y": 0.1,
-        "weight": 10,
-        "multiplier": 2,
-        "steepness": 10
+    "n": {
+        "s": 5,
+        "x0": 0.05,
+        "y0": 0.1,
+        "w": 10,
+        "a": 2,
+        "b": 10
     },
-    "timings": {
-        "slope": 0.3,
-        "center_x": 0.1,
-        "center_y": 0.1,
-        "weight": 3,
-        "multiplier": 5,
-        "steepness": 10
+    "t": {
+        "s": 0.3,
+        "x0": 0.1,
+        "y0": 0.1,
+        "w": 3,
+        "a": 5,
+        "b": 10
     }
 }
 
