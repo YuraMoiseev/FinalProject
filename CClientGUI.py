@@ -1,3 +1,4 @@
+import json
 import queue
 import threading
 from ConstantsAndLogging import *
@@ -7,11 +8,13 @@ from CClientBL import CClientBL
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import QPropertyAnimation, QSequentialAnimationGroup, QParallelAnimationGroup, QPoint, QMetaObject, \
     Qt, QTimer, pyqtSlot
+from Protocol import send_file
 from PyQt5 import uic
 from PyQt5.QtCore import pyqtSignal, pyqtSlot, QObject
 from PyQt5.QtWidgets import QMainWindow, QDialog, QVBoxLayout, QLabel, QPushButton
 from PyQtExtensions import QFileDropWidget, QPopUpWidget
-import ast
+from PyQt5.QtWidgets import QProgressDialog, QMessageBox
+
 
 
 class CConnectGUI(QMainWindow):
@@ -189,8 +192,8 @@ class CClientGUI(CClientBL, QMainWindow):
         # Check the server database for a stored hash of the device to login via an unclose session
         self.safe_send(f"Login_with_session")
         result = self.safe_receive()
-        success, session_code = result.body["msg"], result.body["session"]
-        if result == LOGIN_SUCCESS:
+        success, session_code = result.body.get("msg", ""), result.body.get("session", "")
+        if success == LOGIN_SUCCESS:
             self.windows.clear()
             pop_up = QPopUpWidget(POP_UP_LABEL1, POP_UP_LABEL2, self)
             if pop_up.exec_():
@@ -345,22 +348,25 @@ class CLoginGUI(QDialog):
         self.close()
 
     def on_click_register(self):
-        login = self.login_entry.text()
-        password = self.password_entry.text()
-        email = self.email_entry.text()
-        validity = verify_entry_validity(login, email, password)
-        if not validity[0]:
-            self.label_reg_fail.show()
-            self.label_reg_fail.setText(validity[1])
-        else:
-            data = {"login": login, "email": email, "password": password}
-            self._parent_wnd.safe_send(f"Register", data)
-            result = self._parent_wnd.safe_receive()
-            if result != REG_SUCCESS:
+        try:
+            login = self.login_entry.text()
+            password = self.password_entry.text()
+            email = self.email_entry.text()
+            validity = verify_entry_validity(login, email, password)
+            if not validity[0]:
                 self.label_reg_fail.show()
-                self.label_reg_fail.setText(result)
+                self.label_reg_fail.setText(validity[1])
             else:
-                self.back_to_home()
+                data = {"login": login, "email": email, "password": password}
+                self._parent_wnd.safe_send(f"Register", data)
+                result = self._parent_wnd.safe_receive()
+                if result.body.get("msg", "") != REG_SUCCESS:
+                    self.label_reg_fail.show()
+                    self.label_reg_fail.setText(result.body.get("msg", ""))
+                else:
+                    self.back_to_home()
+        except Exception as e:
+            print("No can reg u: " + str(e))
 
     def on_click_login(self):
         login_text = self.login_entry.text()
@@ -368,7 +374,6 @@ class CLoginGUI(QDialog):
         data = {"login": login_text, "password": password_text}
         self._parent_wnd.safe_send(f"Login_with_data", data)
         message = self._parent_wnd.safe_receive()
-        print(message)
         success, session = message.body["msg"], message.body["session"]
         if success != LOGIN_SUCCESS:
             self.label_login_fail.setText(success)
@@ -462,7 +467,7 @@ class MainWindow(QMainWindow):
             event.accept()
         else:
             self._parent_wnd.safe_send(DISCONNECT_MSG)
-            if self._parent_wnd.safe_receive() == "Bye!":
+            if self._parent_wnd.safe_receive().body.get("msg", "") == "Bye!":
                 event.accept()
             else:
                 event.ignore()
@@ -526,16 +531,13 @@ class RecordWindow(QMainWindow):
         self._client_object.record_wav("recording.wav")
         self.label_record.setText("Recording done. Sending data to the server...")
         self._client_object.safe_send(SEARCH_SONG_REQUEST)
-        self._client_object.send_file("recording.wav")
-        write_to_log(1)
-        result = ast.literal_eval(self._client_object.safe_receive())
-        write_to_log(2)
+        # send_file("recording.wav", self._client_object._client_socket, self._client_object.packet_handler)
+        send_file("C:/Users\Ymois\PycharmProjects\FinalProject\MusicFiles\Audio\RitD.wav", self._client_object._client_socket, self._client_object.packet_handler)
+        result = json.loads(self._client_object.safe_receive().body.get("msg", ""))
         displayed_text = "Found songs \n"
         for i in result:
             displayed_text += f"{i[1]} by {i[2]} is {i[0]:.2f}% similar to your recording, at the time {int(i[3]//60)}:{int(i[3]%60//1):02} \n"
-        write_to_log(3)
         q.put(displayed_text)
-        write_to_log(4)
         self._client_object.update_thread_lock = False
         try:
             os.remove("recording.wav")
@@ -548,8 +550,6 @@ class RecordWindow(QMainWindow):
         self._client_object.cond()
         # time.sleep(3)
         self.label_record.setText("Record")
-
-    from PyQt5.QtWidgets import QProgressDialog, QMessageBox
 
     def on_click_record(self):
         if not self._client_object.is_recording:
@@ -587,7 +587,7 @@ class RecordWindow(QMainWindow):
                 if not recording_thread.is_alive():
                     progress_dialog.close()
                     try:
-                        result_text = q.get_nowait()  # Get result without blocking
+                        result_text = q.get_nowait() # Get result without blocking
                         pop_up = QPopUpWidget(result_text, "POP_UP_LABEL2", self, (1, ["OK"]))
                         pop_up.exec_()
                     except queue.Empty:
@@ -709,33 +709,38 @@ class RequestWindow(QMainWindow):
 
 
     def on_click_send_request(self):
-        if self.name_entry.text() != "":
-            file_type = ""
-            if self.file_drop.chosen_file_path is not None and is_file_present(self.file_drop.chosen_file_path):
-                file_type = self.file_drop.chosen_file_path.split(".")[-1]
+        try:
+            if self.name_entry.text() != "":
+                file_type = ""
+                if self.file_drop.chosen_file_path is not None and is_file_present(self.file_drop.chosen_file_path):
+                    file_type = self.file_drop.chosen_file_path.split(".")[-1]
 
-            data = {
-                "name": self.name_entry.text(), "artist": self.artist_entry.text(),
-                "link": self.link_entry.text(), "description": self.description_entry.text(),
-                "file": file_type
-            }
-            # data = {key:("" if value is None else value) for key, value in data.items()}
-            self._client_object.safe_send(f"Request", data)
-            # write_to_log(f"Request>{data}")
-            if self.file_drop.chosen_file_path is not None:
-                result = self._client_object.send_file(self.file_drop.chosen_file_path)
-            else:
-                result = self._client_object.safe_receive()
-            if type(result) == bool:
-                if result:
-                    result = "Successfully sent"
+                data = {
+                    "name": self.name_entry.text(), "artist": self.artist_entry.text(),
+                    "link": self.link_entry.text(), "description": self.description_entry.text(),
+                    "file": file_type
+                }
+                # data = {key:("" if value is None else value) for key, value in data.items()}
+                self._client_object.safe_send(f"Request", data)
+                # write_to_log(f"Request>{data}")
+                if self.file_drop.chosen_file_path is not None:
+                    result = send_file(self.file_drop.chosen_file_path, self._client_object._client_socket, self._client_object.packet_handler)
                 else:
-                    result = "Error"
-            self.label_request_fail.setText(str(result))
-            self.label_request_fail.show()
-            for entry in self.entries:
-                entry.setText("")
-            self.file_drop.handle_delete()
+                    result = self._client_object.safe_receive()
+                if type(result) == bool:
+                    if result:
+                        result = "Success"
+                    else:
+                        result = "Error"
+                else:
+                    result = result.body.get("msg", "")
+                self.label_request_fail.setText(str(result))
+                self.label_request_fail.show()
+                for entry in self.entries:
+                    entry.setText("")
+                self.file_drop.handle_delete()
+        except Exception as e:
+            print(e)
 
     def closeEvent(self, event):
         self._parent_wnd.children_requests_window = None

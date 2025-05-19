@@ -49,6 +49,7 @@ def create_login_table():
     connection.close()
 
 
+# TODO add resolutions
 def create_songs_table():
     connection = sqlite3.connect(DB_FILE_NAME)
     cursor = connection.cursor()
@@ -59,6 +60,7 @@ def create_songs_table():
         melodies BLOB,
         song_name TEXT NOT NULL,
         artist_name TEXT NOT NULL,
+        resolution REAL NOT NULL,
         added_by INTEGER NOT NULL,
         FOREIGN KEY (added_by) REFERENCES Users (id) ON UPDATE CASCADE
     );
@@ -375,7 +377,6 @@ def login_with_old_session(session_code):
     try:
         connection = sqlite3.connect(DB_FILE_NAME)
         cursor = connection.cursor()
-
         session_code_hash = hash_session_code(session_code)
 
         cursor.execute("SELECT id, is_running FROM Sessions WHERE session_code_hash = ?", (session_code_hash,))
@@ -389,15 +390,23 @@ def login_with_old_session(session_code):
                 new_session_code = generate_session_code()
                 new_code_hash = hash_session_code(new_session_code)
                 cursor.execute("UPDATE Sessions SET session_code_hash = ? WHERE session_code_hash = ?", (new_code_hash, session_code_hash))
+                connection.commit()
+                connection.close()
                 toggle_session_state(session_id, True)
                 update_last_action(session_id)
                 return LOGIN_SUCCESS, new_session_code, session_id # Also save the session id for future reference
             elif is_running:
+                connection.commit()
+                connection.close()
                 return LOGIN_FAIL + " - the session is already taken", "", None
             else:
+                connection.commit()
+                connection.close()
                 return LOGIN_FAIL + " - the session has expired", "", None
         # Else block the user from entering
         else:
+            connection.commit()
+            connection.close()
             return LOGIN_FAIL + " - session was not found", "", None
 
     except Exception as e:
@@ -598,10 +607,10 @@ def fetch_songs(offset=0, amount=10):
     connection = sqlite3.connect(DB_FILE_NAME)
     cursor = connection.cursor()
     cursor.execute('''
-                        SELECT song_name, artist_name, melodies FROM Songs LIMIT ? OFFSET ?
+                        SELECT song_name, artist_name, resolution, melodies FROM Songs LIMIT ? OFFSET ?
                         ''', (amount, offset))
     rows = cursor.fetchall()
-    result_dict = {(song_name, artist_name): blob_data for song_name, artist_name, blob_data in rows}
+    result_dict = {(song_name, artist_name, resolution): blob_data for song_name, artist_name, resolution, blob_data in rows}
     return result_dict
 
 

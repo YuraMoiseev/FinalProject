@@ -32,15 +32,6 @@ def pack_message(packet: Packet, packet_handler: PacketHandler, enc_key: IntFlag
             return False
 
 
-# def create_response_msg(public_key, data) -> str:
-#     """Encrypt and make the given protocol response valid, will be sent by server, with length field"""
-#     response = encrypt_rsa(public_key, data)
-#     if response is None:
-#         response = b''
-#     # return f"{len(str(response)):0{HEADER_LEN}d}".encode(FORMAT) + response
-#     return f"{len(response):0{HEADER_LEN}d}".encode(FORMAT) + response
-
-
 def get_complete_file_path(file_type, file_name, dir):
     project_folder = os.getcwd()  # Get the project folder path
     os.makedirs(dir, exist_ok=True)  # Ensure the directory exists
@@ -49,9 +40,10 @@ def get_complete_file_path(file_type, file_name, dir):
     return file_path
 
 
-def receive_file(client_socket, file_type):
+def receive_file(client_socket, file_type, packet_handler=None):
     initial_timeout = client_socket.timeout
     try:
+        print("Packet Handler:" + packet_handler.fernet_key)
         client_socket.settimeout(None) # Set a bigger timeout to avoid transmission issues
         file_name = get_complete_file_path(file_type, "file", "ServerFiles")
         # Read the file size as a string until the newline character
@@ -67,30 +59,64 @@ def receive_file(client_socket, file_type):
         if file_size == 0:
             write_to_log("[PROTOCOL] file transfer - file size is 0, file not saved")
             return True, file_name
-        bytes_received = 0
+        bytes_received = b""
+        while len(bytes_received) < file_size:
+            # Calculate remaining bytes to read
+            remaining_bytes = file_size - len(bytes_received)
+            # If there are less remaining bytes than the general buffer size, choose a corresponding buffer size
+            bytes_to_read = min(BUFFER_SIZE, remaining_bytes)
+
+            # Read the next chunk
+            bytes_read = client_socket.recv(bytes_to_read)
+            if not bytes_read:
+                # Unexpected disconnection
+                write_to_log("[PROTOCOL] file transfer - connection lost before file transfer was complete.")
+                return False, ""
+            # Write to file and update received byte count
+            bytes_received += bytes_read
         with open(file_name, 'wb') as f:
-            while bytes_received < file_size:
-                # Calculate remaining bytes to read
-                remaining_bytes = file_size - bytes_received
-                # If there are less remaining bytes than the general buffer size, choose a corresponding buffer size
-                bytes_to_read = min(BUFFER_SIZE, remaining_bytes)
+            f.write(decrypt_fernet(packet_handler.fernet_key, bytes_received))
 
-                # Read the next chunk
-                bytes_read = client_socket.recv(bytes_to_read)
-                if not bytes_read:
-                    # Unexpected disconnection
-                    write_to_log("[PROTOCOL] file transfer - connection lost before file transfer was complete.")
-                    return False, ""
-
-                # Write to file and update received byte count
-                f.write(bytes_read)
-                bytes_received += len(bytes_read)
         client_socket.settimeout(initial_timeout)
         return True, file_name
     except Exception as e:
         client_socket.settimeout(initial_timeout)
         write_to_log(f"[PROTOCOL] exception file transfer - {e}")
         return False, ""
+
+
+def send_file(file_name: str, sock, packet_handler: PacketHandler = None) -> bool:
+    try:
+        # Encrypt the whole thing
+        encrypted_bytes = b""
+        with open(file_name, 'rb') as f:
+            encrypted_bytes = encrypt_fernet(packet_handler.fernet_key, f.read())
+        # Get the size of the file
+        file_size = len(encrypted_bytes)
+
+        # Send the file size as a string followed by a newline
+        sock.send(f"{file_size}\n".encode(FORMAT))
+
+        # Send the file data
+        for i in range(file_size//BUFFER_SIZE + 1):
+            if (i+1)*BUFFER_SIZE < file_size:
+                bytes_read = encrypted_bytes[i*BUFFER_SIZE:(i+1)*BUFFER_SIZE]
+            else:
+                bytes_read = encrypted_bytes[i*BUFFER_SIZE:]
+                # File transmission is done
+                sock.send(bytes_read)
+                break
+            sock.send(bytes_read)
+
+        # Log the file transfer
+        write_to_log(f"[CLIENT_BL] sent {sock.getsockname()} file {file_name}")
+        return True
+
+    except Exception as e:
+        write_to_log("[CLIENT_BL] Exception on send: {}".format(e))
+        sock.send(f"{0}\n".encode())
+        sock.send(b"0")
+        return False
 
 
 def receive_msg(my_socket: socket, packet_handler:PacketHandler) -> tuple[bool, Packet, str]:
@@ -115,7 +141,7 @@ def receive_msg(my_socket: socket, packet_handler:PacketHandler) -> tuple[bool, 
 
     except Exception as e:
         # write_to_log("[PROTOCOL] receive msg failed with exception {}".format(e))
-        return False, Packet.create(msg = ""), e
+        return False, Packet.create(msg = ""), str(e)
 
 
 def receive_key(my_socket:socket):

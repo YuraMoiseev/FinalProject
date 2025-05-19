@@ -1,5 +1,4 @@
 from Protocol import *
-import os
 import pyaudio
 import wave
 import hashlib
@@ -23,11 +22,9 @@ class CClientBL:
         self.check_existing_session()
         self.get_device_id()
         self.selected_audio_device = 0
-        # TODO: add request packets, pop when the responce arrives
         self.pending_requests = set()
         self.key_rotation_countdown = 0
 
-    # TODO FIX!!!
     def check_existing_session(self, file_path="session.txt"):
         """Check if the file exists and is non-empty. If not, write content to it."""
         try:
@@ -88,7 +85,7 @@ class CClientBL:
     def disconnect(self) -> bool:
         try:
             write_to_log(f"[CLIENT_BL] {self._client_socket.getsockname()} closing")
-            self.send_data(DISCONNECT_MSG)
+            self.send_data(DISCONNECT_MSG, {})
             self._client_socket.close()
             return True
         except Exception as e:
@@ -164,34 +161,6 @@ class CClientBL:
             write_to_log(f"[CLIENT_BL] successfully changed audio device to {self.selected_audio_device} ({name})")
         except Exception as e:
             write_to_log(f"Exception on selection audio device - {e}")
-
-    def send_file(self, file_name: str) -> bool:
-        try:
-            # Get the size of the file
-            file_size = os.path.getsize(file_name)
-
-            # Send the file size as a string followed by a newline
-            self._client_socket.send(f"{file_size}\n".encode(FORMAT))
-
-            # Send the file data
-            with open(file_name, 'rb') as f:
-                while True:
-                    bytes_read = f.read(BUFFER_SIZE)
-                    if not bytes_read:
-                        # File transmission is done
-                        break
-                    # self._client_socket.send(encrypt_msg(self.serv_public_key, bytes_read))
-                    self._client_socket.send(bytes_read)
-
-            # Log the file transfer
-            write_to_log(f"[CLIENT_BL] sent {self._client_socket.getsockname()} wav file {file_name}")
-            return True
-
-        except Exception as e:
-            write_to_log("[CLIENT_BL] Exception on send_wav: {}".format(e))
-            self._client_socket.send(f"{0}\n".encode())
-            self._client_socket.send(b"0")
-            return False
         
     def delete_request(self, packet_id: str):
         try: 
@@ -265,13 +234,17 @@ if __name__ == "__main__":
     # client.record_wav("recording.wav")
     # client.send_wav("recording.wav")
     # client.record_wav()
-    time.sleep(1)
+    time.sleep(5)
     client.send_data(f"Login_with_session", {})
-    time.sleep(1)
     a = client.receive_data()
-    time.sleep(1)
     write_to_log(str(a))
-    time.sleep(1)
+    client.send_data(SEARCH_SONG_REQUEST, {})
+    a = client.receive_data()
+    write_to_log(str(a))
+    filename = "C:/Users\Ymois\PycharmProjects\FinalProject\MusicFiles\Audio\RitD.wav"
+    send_file(filename, client._client_socket, client.packet_handler)
+    a = client.receive_data()
+    write_to_log(str(a))
     client.disconnect()
 
 

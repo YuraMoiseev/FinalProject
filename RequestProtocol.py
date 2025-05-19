@@ -1,6 +1,4 @@
 from MusicalAnalysis import AudioAnalyzer, MidiAnalyzer
-from PacketProtocol import *
-from ConstantsAndLogging import *
 from DBProtocol import *
 from Protocol import *
 
@@ -36,16 +34,17 @@ def create_response_and_execute_reaction(packet: Packet, session_id, client_hand
     def handle_song_search():
         #try:
         write_to_log("[SERVER_BL] receiving file...")
-        is_recv, file_name = receive_file(client_handler.client_socket, "wav")
+        is_recv, file_name = receive_file(client_handler.client_socket, "wav", client_handler.packet_handler)
         if not is_recv:
             write_to_log("Error - file count not be transferred")
             return
+        print("file:" + file_name)
         songs = fetch_songs()
         # write_to_log(f"[PROTOCOL] fetched songs: {list(songs.keys())}")
         audio_analyzer = AudioAnalyzer(file_name)
-        audio_analyzer.analyze_crepe(time_step=0.02, keep_stamps=True)
-        audio_analyzer.analyze_torchcrepe(time_step=0.02, keep_stamps=True)
-        audio_analyzer.analyze_librosa(time_step=0.02, keep_stamps=True)
+        audio_analyzer.analyze_crepe(time_step=0.05, keep_stamps=True)
+        audio_analyzer.analyze_torchcrepe(time_step=0.05, keep_stamps=True)
+        audio_analyzer.analyze_librosa(time_step=0.05, keep_stamps=True)
         # write_to_log(7)
         midi_analyzer = MidiAnalyzer.load_from_audio_analyzer(audio_analyzer)
         # write_to_log(8)
@@ -59,7 +58,7 @@ def create_response_and_execute_reaction(packet: Packet, session_id, client_hand
         os.remove(file_name)
         # write_to_log(10)
         # write_to_log(f"[PROTOCOL] 20 best songs are: {res_best}")
-        return f"{res_best_rust}"
+        return json.dumps(res_best_rust)
         # except Exception as e:
         #     write_to_log(f"Exception on handling song search: {e}")
         #     return "Error"

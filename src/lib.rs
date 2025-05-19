@@ -50,14 +50,15 @@ struct MIDITrack {
     notes: Vec<f64>,
     times: Vec<f64>,
     directions: Vec<f64>,
+    resolution: f64,
 }
 
 // Constructor for `MidiTrack`
 #[pymethods]
 impl MIDITrack {
     #[new]
-    fn new(notes: Vec<f64>, times: Vec<f64>, directions: Vec<f64>) -> Self {
-        MIDITrack { notes, times, directions }
+    fn new(notes: Vec<f64>, times: Vec<f64>, directions: Vec<f64>, resolution: f64) -> Self {
+        MIDITrack { notes, times, directions, resolution }
     }
 }
 
@@ -131,21 +132,21 @@ impl MidiDTW {
     /// over `seq2`. The evaluation over candidate windows is done in parallel.
     /// 
     /// Notes on optimizations:
-    /// - **Early abandonment:** If during the DTW computation a candidate's cost exceeds the current best, we abort the DTW for that candidate.
     /// - **Parallelism:** We use Rayon to evaluate candidate windows concurrently.
-    /// - **Fixed window size:** The window is fixed to the length of `seq1`.
+    /// - **Fixed window size:** The window is fixed to the length of `seq1`, with a factor of resolution differences.
     fn compare_sliding_window(&self, user: &MIDITrack, song_track: &MIDITrack) -> (f64, f64) {
         let query_len = user.notes.len();
+        let window_len = (user.notes.len() as f64 * (user.resolution / song_track.resolution) + 1.0) as usize;
         let ref_len = song_track.notes.len();
         if query_len == 0 || ref_len <= query_len {
             return (f64::INFINITY, f64::INFINITY);
         }
 
-        (0..=ref_len - query_len)
+        (0..=ref_len - window_len)
             .into_par_iter()
             .map(|start| {
-                let candidate_window_notes = &song_track.notes[start..start + query_len];
-                let len =  query_len as f64;
+                let candidate_window_notes = &song_track.notes[start..start + window_len];
+                let len =  (window_len) as f64;
                 if len.is_nan(){
                     println!("[RUST] Length is invalid")
                 }
@@ -154,10 +155,10 @@ impl MidiDTW {
                 }
                 let note_dist = dtw_with_threshold(&user.notes, candidate_window_notes) / len;
                 
-                let candidate_window_times = &song_track.times[start..start + query_len];
+                let candidate_window_times = &song_track.times[start..start + window_len];
                 let time_dist = dtw_with_threshold(&user.times, candidate_window_times) / len;
 
-                let candidate_window_dirs = &song_track.directions[start..start + query_len - 1];
+                let candidate_window_dirs = &song_track.directions[start..start + window_len - 1];
                 let dir_dist = dtw_with_threshold(&user.directions, candidate_window_dirs) / len;
                 if note_dist.is_nan() || time_dist.is_nan() || dir_dist.is_nan(){
                     println!("[RUST] Error in distance calculation")
@@ -213,7 +214,7 @@ fn dtw_with_threshold(seq1: &[f64], seq2: &[f64]) -> f64 {
         return f64::INFINITY;
     }
 
-    let band = ((m as f64) * 0.1).floor() as usize;
+    let band = ((m as f64) * 0.2).floor() as usize;
     let mut prev_row = vec![f64::INFINITY; m + 1];
     let mut curr_row = vec![f64::INFINITY; m + 1];
     prev_row[0] = 0.0;

@@ -18,12 +18,9 @@ from demucs.apply import apply_model
 import numpy as np
 from pytube import YouTube
 import re
-import librosa.feature
 from pydub import AudioSegment
 from ConstantsAndLogging import write_to_log, WASC
 import math
-import tensorflow as tf
-import tensorflow_hub as hub
 from rust_code import MidiDTW, MIDITrack
 
 
@@ -112,12 +109,13 @@ class AudioExtractor:
 
 class MidiAnalyzer:
 
-    def __init__(self, midi):
+    def __init__(self, midi, resolutions):
         self.midi = midi
         self.check_validity()
         self.note_sequence = self.note_sequences()
         self.timing_sequence = self.timing_sequences()
         self.progression_sequence = self.progression_sequences()
+        self.resolutions = resolutions
 
     @classmethod
     def load_file(cls, file_name):
@@ -127,7 +125,7 @@ class MidiAnalyzer:
 
     @classmethod
     def load_from_audio_analyzer(cls, AA_object):
-        return cls(AA_object.midi_object)
+        return cls(AA_object.midi_object, AA_object.resolutions)
 
 
     def check_validity(self):
@@ -176,7 +174,7 @@ class MidiAnalyzer:
                 track_timings = []
                 active_notes = {}
                 for instance in track:
-                    sec_time = instance.time * 60 / (self.midi.ticks_per_beat * tempo)
+                    sec_time = instance.time * 60000 / (self.midi.ticks_per_beat * tempo)
                     if instance.type == "set_tempo": # handle tempo change
                         tempo = instance.tempo
                     if hasattr(instance, "time"):
@@ -351,7 +349,7 @@ class MidiAnalyzer:
         return [self.paired_sequences_track_rust(i) for i in range(len(self.midi.tracks))]
 
     def paired_sequences_track_rust(self, i=0):
-        return MIDITrack(self.note_sequence[i], self.timing_sequence[i], self.progression_sequence[i])
+        return MIDITrack(self.note_sequence[i], self.timing_sequence[i], self.progression_sequence[i], self.resolutions)
     
     def compare_midis_rust(self, midi_object):
         user_sequences = self.paired_sequences_song_rust()
@@ -368,9 +366,9 @@ class MidiAnalyzer:
         return 100 / (1 + weighed_distance)
 
     @classmethod
-    def load_midi_from_blob(cls, blob_data):
+    def load_midi_from_blob(cls, blob_data, resolutions):
         file_data = io.BytesIO(blob_data)
-        return cls(MidiFile(file=file_data, clip=True))
+        return cls(MidiFile(file=file_data, clip=True), resolutions=resolutions)
 
     def compare_to_db(self, song_dict):
         top_matches = []
@@ -394,8 +392,8 @@ class MidiAnalyzer:
     def compare_to_db_rust(self, song_dict):
         top_matches = []
         # print(song_dict)
-        for (name, artist), midi_blob in song_dict.items():
-            midi_object = MidiAnalyzer.load_midi_from_blob(midi_blob)
+        for (name, artist, resolutions), midi_blob in song_dict.items():
+            midi_object = MidiAnalyzer.load_midi_from_blob(midi_blob, resolutions)
             distance, track_indices, time = self.compare_midis_rust(midi_object)
             print(f"DISTANCE: {distance}")
             similarity = MidiAnalyzer.similarity(distance)
@@ -421,6 +419,7 @@ class AudioAnalyzer:
         self.file_path = file_path
         self.midi_object = MidiFile(ticks_per_beat=480)
         self.lists = []
+        self.resolutions = []
 
     @staticmethod
     def frequency_to_note_name(frequency):
@@ -448,6 +447,7 @@ class AudioAnalyzer:
         timestamps = np.arange(len(pitch_values)) * pitch.time_step
         if keep_stamps:
             self.update_midi_file(timestamps, pitch_values, "C0", "C8")
+            self.resolutions = time_step
         return pitch_values, timestamps
 
     def analyze_librosa(self, time_step, keep_stamps=True):
@@ -459,6 +459,7 @@ class AudioAnalyzer:
         timestamps = np.arange(len(pitch_values)) * time_step
         if keep_stamps:
             self.update_midi_file(timestamps, pitch_values, "C0", "C8")
+            self.resolutions = time_step
         return pitch_values, timestamps
 
     def analyze_torchcrepe(self, time_step, keep_stamps=True):
@@ -493,6 +494,7 @@ class AudioAnalyzer:
 
             if keep_stamps:
                 self.update_midi_file(timestamps_list, pitches_list, "C0", "C8")
+                self.resolutions = time_step
         except Exception as e:
             write_to_log(f"Exception in analyze_torch_crepe: {str(e)}")
 
@@ -530,64 +532,15 @@ class AudioAnalyzer:
             timestamps, frequencies = process_channel(audio)
             if keep_stamps:
                 self.update_midi_file(timestamps, frequencies, "C0", "C8")
+                self.resolutions = time_step 
             return frequencies, timestamps, None, None
         left_timestamps, left_frequencies = process_channel(audio[:, 0])
         right_timestamps, right_frequencies = process_channel(audio[:, 1])
         if keep_stamps:
             self.update_midi_file(right_timestamps, right_frequencies, "C0", "C8")
             self.update_midi_file(left_timestamps, left_frequencies, "C0", "C8")
+            self.resolutions = time_step 
         return right_frequencies, right_timestamps, left_frequencies, left_timestamps
-
-    # def analyze_spice(self, time_step, keep_stamps=True):
-    #     model = hub.load("https://tfhub.dev/google/spice/2")
-    #
-    #     def process_channel(channel_data):
-    #         # Normalize audio (-1 to 1)
-    #         channel_data = channel_data.astype(np.float32) / np.max(np.abs(channel_data))
-    #
-    #         # Run inference
-    #         outputs = model.signatures["serving_default"](tf.constant(channel_data, dtype=tf.float32))
-    #
-    #         # Extract pitch estimates
-    #         frequencies = outputs["pitch"].numpy()
-    #         confidence = outputs["uncertainty"].numpy()
-    #         confidence = 1.0 - confidence  # Convert uncertainty to confidence
-    #
-    #         # Filter based on confidence threshold
-    #         valid_indices = confidence >= 0.5
-    #         timestamps = np.arange(len(frequencies)) * time_step  # Generate timestamps
-    #
-    #         return timestamps[valid_indices], frequencies[valid_indices]
-    #
-    #     try:
-    #
-    #         # Load the audio file
-    #         sample_rate, audio = wavfile.read(self.file_path)
-    #
-    #         # Ensure the sample rate is 16kHz (SPICE requires 16kHz)
-    #         target_sample_rate = 16000
-    #         if sample_rate != target_sample_rate:
-    #             audio = librosa.resample(audio.astype(np.float32), orig_sr=sample_rate, target_sr=target_sample_rate)
-    #
-    #         # Handle mono and stereo audio
-    #         if len(audio.shape) == 1:  # Mono
-    #             timestamps, frequencies = process_channel(audio)
-    #             if keep_stamps:
-    #                 self.update_midi_file(timestamps, frequencies, "C0", "C8")
-    #             return frequencies, timestamps, None, None
-    #
-    #         elif len(audio.shape) == 2:  # Stereo
-    #             left_timestamps, left_frequencies = process_channel(audio[:, 0])
-    #             right_timestamps, right_frequencies = process_channel(audio[:, 1])
-    #
-    #             if keep_stamps:
-    #                 self.update_midi_file(right_timestamps, right_frequencies, "C0", "C8")
-    #                 self.update_midi_file(left_timestamps, left_frequencies, "C0", "C8")
-    #
-    #             return right_frequencies, right_timestamps, left_frequencies, left_timestamps
-    #
-    #     except Exception as e:
-    #         write_to_log(f"Exception in analyze_spice: {str(e)}")
 
     def analyze_full(self, time_step=0.01, keep_stamps=True):
         try:
@@ -807,8 +760,10 @@ class AudioSeparator:
 # AA.analyze_parselmouth(0.01)
 # AA.save_midi(midi_file)
 if __name__ == "__main__":
-    # file = "C:/Users/Ymois/PycharmProjects/FinalProject/ServerFiles/Audio_ba4a7e78c4bc4aada61169f1c2a89995.wav"
-    file = "C:/Users\Ymois\PycharmProjects\FinalProject\MusicFiles\Audio\DT-The-Best-Of-Times-Solo.wav"
+    file = "C:/Users/Ymois/PycharmProjects/FinalProject/ServerFiles/Audio_ba4a7e78c4bc4aada61169f1c2a89995.wav"
+    # file = "D:\Videos and Recordings\Audio\TWTIA\TWTIA.mp3"
+    # AS = AudioSeparator(file_path = file, base_dir="D:\Videos and Recordings\Audio\TWTIA")
+    # AS.separate_demucs()
 
     AA = AudioAnalyzer(file)
     AA.analyze_crepe(0.5, True)
@@ -829,10 +784,10 @@ if __name__ == "__main__":
     print("python runtime:" + str(time.time()-start1))
     print("rust similarity:" + str(MA1.similarity(a1[0])) + "   python similarity:" + str(MA1.similarity(a2[0])))
 
-    # track1 = MIDITrack([1, 1, 3, 2, 5, 6], [0, 0.2, 0.3, 0.1, 0.5], [0, 1, -1, 1, 1])
-    # track2 = MIDITrack([0, 4, 2, 3, 11, 6], [0, 0.2, 0.3, 0.5, 0.1], [1, -1, 1, 1, -1])
-    # a1 = MidiDTW().compare_tracks(track1, track2)
-    # print("rust result:" + str(a1))
+    track1 = MIDITrack([1, 1, 3, 2, 5, 6], [0, 0.2, 0.3, 0.1, 0.5], [0, 1, -1, 1, 1])
+    track2 = MIDITrack([0, 4, 2, 3, 11, 6], [0, 0.2, 0.3, 0.5, 0.1], [1, -1, 1, 1, -1])
+    a1 = MidiDTW().compare_tracks(track1, track2)
+    print("rust result:" + str(a1))
 
 # best_distance, best_position = compare_melodies_2(midi2, midi1)
 # print(f"Best match found at position {best_position} with similarity {similarity(best_distance)}%")

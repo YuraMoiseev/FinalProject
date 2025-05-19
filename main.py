@@ -7,10 +7,21 @@ import os
 import math
 import crepe
 from scipy.io import wavfile
-# from pydub import AudioSegment
+from pydub import AudioSegment
 from fastdtw import fastdtw
 from scipy.spatial.distance import euclidean
 from sortedcontainers import SortedList
+
+
+# !!!!!!!!
+# There's a lot of garbage in this project that I so far couldn't get my
+# hands on cleaning (like old and unused functions, commented lines, etc.)
+# It eventually will be clean
+# The "main.py" file is only for experimenting.
+# There is nothing here that is incorporated into the workflow
+# !!!!!!!!!!
+
+
 
 # note off/on - type
 
@@ -529,7 +540,7 @@ def count_lines_in_py_files(directory):
 # file_path = "MusicFiles/Audio/Dream Theater - The Best Of Times Isolated Guitar Solo (John Petrucci).mp3"
 
 
-# # files
+# files
 # src = "MusicFiles/Audio/Dream Theater - The Best Of Times Isolated Guitar Solo (John Petrucci).mp3"
 # dst = "DT-The-Best-Of-Times-Solo.wav"
 #
@@ -578,11 +589,12 @@ if __name__ == "__main__":
     #     b = tf.constant([[4.0, 5.0, 6.0]])
     #     print("Result:", tf.matmul(a, b, transpose_b=True))
 
-    import tensorflow as tf
+    src = "C:/Users\Ymois\Downloads\Telegram Desktop\AUD-20250518-WA0000.m4a"
+    dst = "C:/Users\Ymois\Downloads\final.mp3"
 
-    print(tf.sysconfig.get_build_info())
-
-    pass
+    # convert wav to mp3
+    sound = AudioSegment.from_m4p(src)
+    sound.export(dst, format="wav")
 
 # Min heap of melodies by difference
 
