@@ -1,13 +1,15 @@
+# Libraries
 from cryptography.hazmat.primitives.asymmetric import rsa,padding
 from cryptography.hazmat.primitives import serialization,hashes
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
 from cryptography.fernet import Fernet
 from argon2 import PasswordHasher
-from ConstantsAndLogging import FORMAT, write_to_log, SECRET_KEY
-import hmac
-import hashlib
 import secrets
 import string
+
+# Local
+from CLIENT.config_utils.config import FORMAT
+from CLIENT.config_utils.utils import write_to_log
 
 def to_bytes(data):
     if not isinstance(data, bytes):
@@ -118,9 +120,6 @@ def generate_session_code(length=16):
     # Generate a random code
     session_code = ''.join(secrets.choice(alphabet) for _ in range(length))
     return session_code
-
-def hash_session_code(session_code):
-    return hmac.new(SECRET_KEY, session_code.encode(), hashlib.sha256).hexdigest()
 
 
 def generate_fernet_key():

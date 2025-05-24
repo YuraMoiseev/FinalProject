@@ -1,19 +1,21 @@
+# Libraries
 import json
 import queue
 import threading
-from ConstantsAndLogging import *
 import time
 import os
-from CClientBL import CClientBL
 from PyQt5.QtWidgets import *
-from PyQt5.QtCore import QPropertyAnimation, QSequentialAnimationGroup, QParallelAnimationGroup, QPoint, QMetaObject, \
-    Qt, QTimer, pyqtSlot
-from Protocol import send_file
+from PyQt5.QtCore import QPropertyAnimation, QSequentialAnimationGroup, QParallelAnimationGroup, QPoint, Qt, QTimer
 from PyQt5 import uic
-from PyQt5.QtCore import pyqtSignal, pyqtSlot, QObject
-from PyQt5.QtWidgets import QMainWindow, QDialog, QVBoxLayout, QLabel, QPushButton
-from PyQtExtensions import QFileDropWidget, QPopUpWidget
+from PyQt5.QtWidgets import QMainWindow, QDialog, QLabel, QPushButton
 from PyQt5.QtWidgets import QProgressDialog, QMessageBox
+
+# Local
+from CLIENT.CClientBL import CClientBL
+from CLIENT.GUI.PyQtExtensions import QFileDropWidget, QPopUpWidget
+from CLIENT.Protocols.Protocol import send_file
+from CLIENT.config_utils.config import *
+from CLIENT.config_utils.utils import write_to_log, is_file_present, verify_entry_validity
 
 
 
@@ -387,13 +389,198 @@ class CLoginGUI(QDialog):
             self.hide()
             # main_window.create_main_ui()
 
-
     def on_click_forgot_pw(self):
-        write_to_log("Pomnit' Nada")
+        self._child = ForgotPasswordGUI(parent_wnd=self, main_parent=self._parent_wnd)
+        self.hide()
 
 
-# class ForgotPassword(QDialog):
-#     def __init__(self, parent=None):
+class ForgotPasswordGUI(QDialog):
+    def __init__(self, parent_wnd=None, main_parent = None):
+        QDialog.__init__(self)
+        self._parent_wnd = parent_wnd
+        self._main_parent = main_parent
+        self._child = None
+        self._email_sent = False
+        self._email = ""
+
+        self.entry_email = None
+        self.entry_code = None
+        self.label_status = None
+        self.label_explain = None
+        self.button_send = None
+        self.button_back = None
+
+        self.create_ui()
+
+    def create_ui(self):
+        uic.loadUi("GUI/UIs/ForgotPasswordGUI.ui", self)
+        self.setFixedSize(800, 800)
+
+        self.entry_email = self.findChild(QLineEdit, "LineEditEmail")
+        self.entry_email.setStyleSheet(ENTRY_STYLE_SHEET)
+
+        self.entry_code = self.findChild(QLineEdit, "LineEditCode")
+        self.entry_code.setStyleSheet(ENTRY_STYLE_SHEET)
+        self.entry_code.setPlaceholderText("Enter code after requesting it")
+
+        self.label_explain = self.findChild(QLabel, "LabelExplain")
+        self.label_explain.setWordWrap(True)
+
+        self.label_status = self.findChild(QLabel, "LabelStatus")
+        self.label_status.setWordWrap(True)
+        self.label_status.hide()
+
+        self.button_back = self.findChild(QPushButton, "ButtonBack")
+        self.button_back.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.button_back.clicked.connect(self.on_click_back)
+
+        self.button_send = self.findChild(QPushButton, "ButtonSendOrVerify")
+        self.button_send.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.button_send.clicked.connect(self.on_click_send_or_verify)
+
+        self.show()
+
+    def on_click_back(self):
+        self.close()
+        self._parent_wnd.show()
+
+    def on_click_send_or_verify(self):
+        email = self.entry_email.text().strip()
+        code = self.entry_code.text().strip()
+
+        if not self._email_sent:
+            if not email:
+                self.label_status.setText("Please enter your email.")
+                self.label_status.show()
+                return
+
+            self._main_parent.safe_send("Request_password_reset", {"email": email})
+            result = self._main_parent.safe_receive()
+            msg = result.body.get("msg", "")
+
+            if msg == "Email not found":
+                self.label_status.setText("This email is not registered.")
+                self.label_status.show()
+            elif msg == "Reset code sent":
+                self._email_sent = True
+                self._email = email
+                self.label_status.setText("Verification code sent to your email.")
+                self.label_status.show()
+                self.entry_code.setFocus()
+            else:
+                self.label_status.setText("Unexpected error occurred.")
+                self.label_status.show()
+        else:
+            if not code:
+                self.label_status.setText("Please enter the code you received.")
+                self.label_status.show()
+                return
+
+            self._main_parent.safe_send("Verify_password_reset_code", {
+                "email": self._email,
+                "code": code
+            })
+            result = self._main_parent.safe_receive()
+            msg = result.body.get("msg", "")
+
+            if msg == "Valid token":
+                self._child = ResetPasswordGUI(parent_wnd=self, email=self._email, main_parent=self._main_parent, code=code)
+                self.hide()
+            elif msg == "Invalid token":
+                self.label_status.setText("Invalid code. Try again.")
+                self.label_status.show()
+            elif msg == "Token expired":
+                self.label_status.setText("Code expired. Please request again.")
+                self.label_status.show()
+            else:
+                self.label_status.setText("Unexpected error occurred.")
+                self.label_status.show()
+
+
+class ResetPasswordGUI(QDialog):
+    def __init__(self, parent_wnd=None, main_parent = None, email="", code=""):
+        QDialog.__init__(self)
+        self._parent_wnd = parent_wnd
+        self._main_parent = main_parent
+        self._email = email
+        self._code = code
+
+        self.entry_new_pw = None
+        self.entry_confirm_pw = None
+        self.label_status = None
+        self.button_confirm = None
+        self.button_back = None
+
+        self.create_ui()
+
+    def create_ui(self):
+        uic.loadUi("GUI/UIs/ResetPasswordGUI.ui", self)
+        self.setFixedSize(700, 700)
+
+        self.entry_new_pw = self.findChild(QLineEdit, "LineEditNew")
+        self.entry_new_pw.setStyleSheet(ENTRY_STYLE_SHEET)
+        self.entry_new_pw.setEchoMode(QLineEdit.Password)
+
+        self.entry_confirm_pw = self.findChild(QLineEdit, "LineEditVerify")
+        self.entry_confirm_pw.setStyleSheet(ENTRY_STYLE_SHEET)
+        self.entry_confirm_pw.setEchoMode(QLineEdit.Password)
+
+        self.label_status = self.findChild(QLabel, "LabelStatus")
+        self.label_status.setWordWrap(True)
+        self.label_status.hide()
+
+        self.button_back = self.findChild(QPushButton, "ButtonBack")
+        self.button_back.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.button_back.clicked.connect(self.on_click_back)
+
+        self.button_confirm = self.findChild(QPushButton, "ButtonSend")
+        self.button_confirm.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.button_confirm.clicked.connect(self.on_click_confirm)
+
+        self.show()
+
+    def on_click_confirm(self):
+        new_pw = self.entry_new_pw.text().strip()
+        confirm_pw = self.entry_confirm_pw.text().strip()
+
+        if not new_pw or not confirm_pw:
+            self.label_status.setText("Please fill both fields.")
+            self.label_status.show()
+            return
+
+        if new_pw != confirm_pw:
+            self.label_status.setText("Passwords do not match.")
+            self.label_status.show()
+            return
+
+        data = {
+            "email": self._email,
+            "code": self._code,
+            "new_password": new_pw
+        }
+
+        self._main_parent.safe_send("Confirm_password_reset", data)
+        result = self._main_parent.safe_receive()
+        msg, session = result.body.get("msg", ""), result.body.get("session", "")
+
+        if msg == "Reset not requested":
+            self.label_status.setText("You must request a reset first.")
+            self.label_status.show()
+        elif msg == "Request expired":
+            self.label_status.setText("Reset request expired. Please try again.")
+            self.label_status.show()
+        elif msg == "Password reset success":
+            self._main_parent.refresh_session_file(session)
+            main_window = MainWindow(parent_wnd=self._main_parent)
+            self._main_parent.windows.append(main_window)
+            self.close()
+        else:
+            self.label_status.setText("Unexpected error occurred.")
+            self.label_status.show()
+
+    def on_click_back(self):
+        self.close()
+        self._parent_wnd.show()
 
 
 class MainWindow(QMainWindow):
@@ -528,11 +715,11 @@ class RecordWindow(QMainWindow):
 
     def _record(self, q):
         self._client_object.update_thread_lock = True
-        self._client_object.record_wav("recording.wav")
+        self._client_object.record_wav("CLIENT/temp/recording.wav")
         self.label_record.setText("Recording done. Sending data to the server...")
         self._client_object.safe_send(SEARCH_SONG_REQUEST)
-        # send_file("recording.wav", self._client_object._client_socket, self._client_object.packet_handler)
-        send_file("C:/Users\Ymois\PycharmProjects\FinalProject\MusicFiles\Audio\RitD.wav", self._client_object._client_socket, self._client_object.packet_handler)
+        send_file("CLIENT/temp/recording.wav", self._client_object._client_socket, self._client_object.packet_handler)
+        # send_file("/MusicFiles/Audio/RitD.wav", self._client_object._client_socket, self._client_object.packet_handler)
         result = json.loads(self._client_object.safe_receive().body.get("msg", ""))
         displayed_text = "Found songs \n"
         for i in result:
@@ -750,5 +937,5 @@ class RequestWindow(QMainWindow):
 if __name__ == "__main__":
     app = QApplication([])
     Client = CConnectGUI()
-    # client = RequestWindow()
+    # client = ResetPasswordGUI()
     app.exec_()

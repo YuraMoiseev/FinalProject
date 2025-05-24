@@ -1,18 +1,11 @@
+# Libraries
 import socket
-from PacketProtocol import *
-from SecurityProtocol import *
 import os
-import uuid
 
-
-def compare_melody(client_data, db_data):
-    # will compare the entered melody to the melodies of some specific song in db
-    pass
-
-
-def best_matches(data):
-    # will iterate through the database and compare the values, then will return the 10 closest matches
-    pass
+# Local
+from .PacketProtocol import *
+from .SecurityProtocol import *
+from SERVER.config_utils.config import BUFFER_SIZE, HEADER_LEN
 
 
 def pack_message(packet: Packet, packet_handler: PacketHandler, enc_key: IntFlag, public_key) -> bytes:
@@ -29,7 +22,7 @@ def pack_message(packet: Packet, packet_handler: PacketHandler, enc_key: IntFlag
         return f"{len(request):0{HEADER_LEN}d}".encode(FORMAT) + request
     except Exception as e:
             write_to_log("[PROTOCOL] Exception on packing a message: {}".format(e))
-            return False
+            return b''
 
 
 def get_complete_file_path(file_type, file_name, dir):

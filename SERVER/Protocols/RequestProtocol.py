@@ -1,6 +1,8 @@
-from MusicalAnalysis import AudioAnalyzer, MidiAnalyzer
-from DBProtocol import *
-from Protocol import *
+# Local
+from SERVER.MusicalAnalysis.MusicalAnalysis import AudioAnalyzer, MidiAnalyzer
+from .DBProtocol import *
+from .Protocol import *
+
 
 def check_cmd(cmd):
     if type(cmd) == bytes:
@@ -90,6 +92,15 @@ def create_response_and_execute_reaction(packet: Packet, session_id, client_hand
         resp_packet.mod_body("msg", f_key)
     elif cmd == "Register":
         resp_packet.mod_body("msg", register_client(args))
+    elif cmd == "Request_password_reset":
+        res = request_password_reset(args.get("email", ""))
+        resp_packet.mod_body("msg", res)
+    elif cmd == "Verify_password_reset_code":
+        res = verify_reset_code(args.get("email", ""), args.get("code", ""))
+        resp_packet.mod_body("msg", res)
+    elif cmd == "Confirm_password_reset":
+        res = confirm_password_reset(args.get("email", ""), args.get("code", ""), args.get("new_password", ""))
+        resp_packet.mod_body("msg", res)
     elif cmd == "Login_with_data":
         response, session_code, client_handler.session = login_with_data(args)
         resp_packet.mod_body("msg", response)
@@ -118,7 +129,7 @@ def create_response_and_execute_reaction(packet: Packet, session_id, client_hand
 REQUESTS_1 = {"Hello": "Hello!",
               SEND_FILE_SUCCESS: SEND_FILE_SUCCESS, SEND_FILE_FAIL: SEND_FILE_FAIL, DISCONNECT_MSG: "Bye!", "Update": "All Good", "Songs": "K"}
 
-REQUESTS_2 = {"Register", "Request", "Delete_session", SEARCH_SONG_REQUEST, "Rotate_key"}
+REQUESTS_2 = {"Register", "Request", "Delete_session", SEARCH_SONG_REQUEST, "Rotate_key", "Verify_password_reset_code", "Request_password_reset", "Confirm_password_reset"}
 
 
 LOGIN_REQUESTS = {"Login_with_session", "Login_with_data"}

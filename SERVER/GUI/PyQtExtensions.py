@@ -1,7 +1,11 @@
+# Libraries
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import  Qt, QPoint
-from DBProtocol import fetch_requests, fetch_users
-from ConstantsAndLogging import *
+
+# Local
+from SERVER.Protocols.DBProtocol import fetch_users
+from SERVER.config_utils.config import DROP_FILE_STYLE_SHEET, LABEL_STYLE_SHEET, ERROR_LABEL_STYLE_SHEET, BUTTON_STYLE_SHEET, TABLE_STYLE_SHEET, USERS_COLUMNS
+from SERVER.config_utils.utils import write_to_log
 
 
 class QFileDropWidget(QWidget):

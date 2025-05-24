@@ -1,3 +1,4 @@
+# Libraries
 import librosa
 import parselmouth
 from mido import MetaMessage, Message, MidiFile, MidiTrack, bpm2tempo
@@ -19,8 +20,11 @@ import numpy as np
 from pytube import YouTube
 import re
 from pydub import AudioSegment
-from ConstantsAndLogging import write_to_log, WASC
 import math
+
+# Local
+from SERVER.config_utils.config import WASC
+from SERVER.config_utils.utils import write_to_log
 from rust_code import MidiDTW, MIDITrack
 
 
@@ -91,7 +95,7 @@ class AudioExtractor:
         print("Downloading audio from YouTube...")
         try:
             # Generate the output file path
-            output_path = get_complete_file_path(self.format, "Audio", "ServerFiles")
+            output_path = get_complete_file_path(self.format, "Audio", "../ServerFiles")
 
             self.opts['outtmpl'] = output_path[:-4]
 
@@ -760,7 +764,7 @@ class AudioSeparator:
 # AA.analyze_parselmouth(0.01)
 # AA.save_midi(midi_file)
 if __name__ == "__main__":
-    file = "C:/Users/Ymois/PycharmProjects/FinalProject/ServerFiles/Audio_ba4a7e78c4bc4aada61169f1c2a89995.wav"
+    file = "/SERVER/ServerFiles/Audio_ba4a7e78c4bc4aada61169f1c2a89995.wav"
     # file = "D:\Videos and Recordings\Audio\TWTIA\TWTIA.mp3"
     # AS = AudioSeparator(file_path = file, base_dir="D:\Videos and Recordings\Audio\TWTIA")
     # AS.separate_demucs()

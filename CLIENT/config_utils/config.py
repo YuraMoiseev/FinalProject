@@ -1,7 +1,3 @@
-import logging
-import os
-
-# my ip - 10.81.206.63
 CLIENT_HOST: str = "127.0.0.1"
 SERVER_HOST: str = "0.0.0.0"
 PORT: int = 55555
@@ -9,8 +5,6 @@ BUFFER_SIZE: int = 1024
 HEADER_LEN: int = 4
 FORMAT: str = 'utf-8'
 DISCONNECT_MSG: str = "EXIT"
-
-ip = "172.16.15.254"
 
 INVALID_CHARACTERS = [",", "{", "}"]
 REG_FAIL_USERNAME: str = "Username/Email is already taken"
@@ -123,83 +117,4 @@ TABLE_STYLE_SHEET = """
     }
 """
 
-DB_FILE_NAME = "DataBases.db"
-
-SECRET_KEY = b"Something_that_is_here_now_but_will_be_securely_stored_later"  # Keep this secret!
-
-REQUESTS_COLUMNS = {'Id': None, 'Song Name':None, 'Artist':None, 'Link':None, 'Description':None, 'File Type':None, 'Requester':None, 'Reject':None, 'Accept':None}
-USERS_COLUMNS = {'Id':None, 'Username':None, 'Admin':None}
-
-
-def literal_bool(boo:str):
-    if boo == "True" or boo == "1":
-        return True
-    return False
-
-
-VirtualEnv = "C:/Users/Ymois/PycharmProjects/FinalProject/venv/Scripts/activate"
-DemucsEnv = "C:/Users/Ymois/PycharmProjects/FinalProject/demucs_env/Scripts/activate"
-
-# Weighing and similarity constants
-"""
-For deeper understanding and reasoning behind the constants - please read the MelodyComparison.pdf file
-1. Each *s* weighed dist is multiplied by *b*
-2. Forcing weighed dist at *x0* to be equal to *y0*
-3. Weighted additionally when combining distances
-4. a - how fast the dist goes down to 0 at values smaller than the x0 (just a huge value, prolly won't need it but ehh why not ._. )
-"""
-WASC = {
-    "d": {
-        "s": 2,
-        "x0": 0.02,
-        "y0": 0.1,
-        "w": 25,
-        "a": 3,
-        "b": 10
-    },
-    "n": {
-        "s": 5,
-        "x0": 0.05,
-        "y0": 0.1,
-        "w": 10,
-        "a": 2,
-        "b": 10
-    },
-    "t": {
-        "s": 0.3,
-        "x0": 0.1,
-        "y0": 0.1,
-        "w": 3,
-        "a": 5,
-        "b": 10
-    }
-}
-
-# prepare Log file
-LOG_FILE = 'LOG.log'
-logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-
-def write_to_log(msg):
-    logging.info(msg)
-    print(msg)
-
-
-def is_file_present(file_name: str) -> bool:
-    if not os.path.exists(file_name):
-        write_to_log(f"[PROTOCOL] - file does not exist: {file_name}")
-        return False
-    return True
-
-
-def verify_entry_validity(username: str, email: str, password: str):
-    if any(character in username for character in INVALID_CHARACTERS):
-        return False, "Username is invalid - prohibited characters used"
-    if any(character in email for character in INVALID_CHARACTERS):
-        return False, "Email is invalid - prohibited characters used"
-    if "@" not in email:
-        return False, "Email is invalid - @?"
-    if any(character in password for character in INVALID_CHARACTERS):
-        return False, "Password is invalid - prohibited characters used"
-    return True, ""
 

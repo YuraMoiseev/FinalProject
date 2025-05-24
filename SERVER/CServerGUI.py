@@ -1,10 +1,13 @@
+# Libraries
 import threading
-from CServerBL import CServerBL
-from PyQt5.QtWidgets import *
 from PyQt5 import uic
-from PyQtExtensions import *
-from MusicalAnalysis import validate_url, to_wav, AudioExtractor, AudioSeparator
-from RequestProtocol import *
+
+# Local
+from CServerBL import CServerBL
+from GUI.PyQtExtensions import *
+from MusicalAnalysis.MusicalAnalysis import validate_url, to_wav, AudioExtractor, AudioSeparator
+from Protocols.RequestProtocol import *
+from config_utils.utils import is_file_present
 
 class CHostGUI(QMainWindow):
     def __init__(self):

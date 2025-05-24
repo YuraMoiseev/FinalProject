@@ -1,9 +1,13 @@
-from Protocol import *
+# Libraries
 import pyaudio
 import wave
-import hashlib
 import subprocess
-from PacketProtocol import *
+import hashlib
+
+# Local
+from CLIENT.Protocols.Protocol import *
+from CLIENT.Protocols.PacketProtocol import *
+from CLIENT.config_utils.config import HEADER_LEN, DISCONNECT_MSG, KEY_ROTATION_COUNTDOWN, CLIENT_HOST, PORT, SEARCH_SONG_REQUEST, FORMAT
 
 class CClientBL:
 
@@ -79,7 +83,8 @@ class CClientBL:
 
     def exchange_rsa_keys(self):
         key = load_pem(self._private_key.public_key())
-        self._client_socket.send(f"{len(str(key)):0{HEADER_LEN}d}{key.decode(FORMAT)}".encode(FORMAT))
+        key_string = f"{len(str(key)):0{HEADER_LEN}d}{key.decode(FORMAT)}".encode(FORMAT)
+        self._client_socket.send(key_string)
         self.serv_public_key = receive_key(self._client_socket)
 
     def disconnect(self) -> bool:
@@ -207,6 +212,7 @@ class CClientBL:
             write_to_log('[CLIENT_BL] finished recording')
 
             # Save the recorded data as a WAV file
+            os.makedirs(os.path.dirname(file_name), exist_ok=True)
             wf = wave.open(file_name, 'wb')
             wf.setnchannels(channels)
             wf.setsampwidth(p.get_sample_size(sample_format))
@@ -223,7 +229,7 @@ class CClientBL:
 import time
 if __name__ == "__main__":
     # file_path = "C:/Users\Ymois\PycharmProjects\FinalProject\MusicFiles\Audio\TestAdele.wav"
-    file_path = "C:/Users\Ymois\PycharmProjects\FinalProject\MusicFiles\Audio\RitD.wav"
+    file_path = "/MusicFiles/Audio/RitD.wav"
     client = CClientBL(CLIENT_HOST, PORT)
     client.connect()
     # write_to_log(client.receive_data())
@@ -241,7 +247,7 @@ if __name__ == "__main__":
     client.send_data(SEARCH_SONG_REQUEST, {})
     a = client.receive_data()
     write_to_log(str(a))
-    filename = "C:/Users\Ymois\PycharmProjects\FinalProject\MusicFiles\Audio\RitD.wav"
+    filename = "/MusicFiles/Audio/RitD.wav"
     send_file(filename, client._client_socket, client.packet_handler)
     a = client.receive_data()
     write_to_log(str(a))

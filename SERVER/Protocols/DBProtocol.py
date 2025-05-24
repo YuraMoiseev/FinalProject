@@ -1,8 +1,14 @@
+# Libraries
 import sqlite3
-
-from ConstantsAndLogging import *
-from SecurityProtocol import hash_password, verify_password, hash_session_code, generate_session_code
+import uuid
 import time
+import smtplib
+from email.message import EmailMessage
+
+# Local
+from SERVER.config_utils.config import *
+from SERVER.config_utils.utils import write_to_log, verify_entry_validity
+from .SecurityProtocol import hash_password, verify_password, hash_session_code, generate_session_code
 
 
 def create_db_tables():
@@ -11,6 +17,7 @@ def create_db_tables():
     create_requests_table()
     create_sessions_table()
     create_songs_table()
+    create_password_reset_table()
 
 
 def create_users_table():
@@ -125,7 +132,6 @@ def create_sessions_table():
     connection.close()
 
 
-
 def create_responses_table():
     # Create requests table in DB
     connection = sqlite3.connect(DB_FILE_NAME)
@@ -144,22 +150,162 @@ def create_responses_table():
     connection.close()
 
 
-def create_searches_table():
-    # Create requests table in DB
+def create_pending_users_table():
     connection = sqlite3.connect(DB_FILE_NAME)
     cursor = connection.cursor()
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS Sessions (
-        id INTEGER PRIMARY KEY,
-        results JSONB,
-        timestamp INTEGER NOT NULL,
-        user_id INTEGER NOT NULL,
-        FOREIGN KEY (user_id) REFERENCES Users (id)
-    )
-    """)
-
+    CREATE TABLE IF NOT EXISTS PendingUsers (
+        login TEXT PRIMARY KEY,
+        email TEXT NOT NULL,
+        hashed_password TEXT NOT NULL,
+        is_admin BOOLEAN NOT NULL,
+        successful_additions INTEGER NOT NULL,
+        failed_additions INTEGER NOT NULL,
+        token TEXT NOT NULL
+        )
+        """)
     connection.commit()
     connection.close()
+
+
+def create_password_reset_table():
+    try:
+        connection = sqlite3.connect(DB_FILE_NAME)
+        cursor = connection.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS PasswordResetRequests (
+                email TEXT PRIMARY KEY,
+                token TEXT NOT NULL,
+                expiration_timestamp INTEGER NOT NULL
+            )
+        ''')
+        connection.commit()
+        connection.close()
+    except Exception as e:
+        write_to_log(f"[DB_PROTOCOL] - failed to create password reset table: {e}")
+
+
+def send_email_verification_code(email, code):
+    try:
+        msg = EmailMessage()
+        msg['Subject'] = "TuneTrace - Password Reset Code"
+        msg['From'] = "tunetraceofficial@gmail.com"  # your sender address
+        msg['To'] = email
+        msg.set_content(f"Your password reset code is: {code}\n Do NOT reveal this code to anyone!")
+
+        # Setup the SMTP server (use your real provider or use Gmail with app passwords)
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+            smtp.login("tunetraceofficial@gmail.com", "bujt wyqa axfx omdi")
+            smtp.send_message(msg)
+
+    except Exception as e:
+        write_to_log(f"[EMAIL] Failed to send verification code to {email}: {e}")
+
+
+def request_password_reset(email):
+    try:
+        connection = sqlite3.connect(DB_FILE_NAME)
+        cursor = connection.cursor()
+
+        # Check if email exists
+        cursor.execute("SELECT 1 FROM Users WHERE email = ?", (email,))
+        if cursor.fetchone() is None:
+            connection.close()
+            return "Email not found"
+
+        # Generate token + expiry (10 minutes from now)
+        token = str(uuid.uuid4())[:6]  # 6-char code
+        expiry = int(time.time()) + 600  # 600 seconds = 10 mins
+
+        # Insert or replace existing reset request
+        cursor.execute('''
+            INSERT INTO PasswordResetRequests (email, token, expiration_timestamp)
+            VALUES (?, ?, ?)
+            ON CONFLICT(email) DO UPDATE SET token = excluded.token, expiration_timestamp = excluded.expiration_timestamp
+        ''', (email, token, expiry))
+
+        connection.commit()
+        connection.close()
+
+        # Send code via email (pseudo)
+        send_email_verification_code(email, token)
+
+        return "Reset code sent"
+    except Exception as e:
+        write_to_log(f"[DB_PROTOCOL] - password reset request failed: {e}")
+
+
+def verify_reset_code(email, token):
+    try:
+        now = int(time.time())
+        connection = sqlite3.connect(DB_FILE_NAME)
+        cursor = connection.cursor()
+
+        # Validate token and time
+        cursor.execute('''
+            SELECT token, expiration_timestamp FROM PasswordResetRequests WHERE email = ?
+        ''', (email,))
+        row = cursor.fetchone()
+        if not row:
+            connection.close()
+            return "Reset not requested"
+
+        stored_token, expiration = row
+        if token != stored_token:
+            connection.close()
+            return "Invalid token"
+        if now > expiration:
+            cursor.execute("DELETE FROM PasswordResetRequests WHERE email = ?", (email,))
+            connection.commit()
+            connection.close()
+            return "Token expired"
+        connection.commit()
+        connection.close()
+
+        return "Valid token"
+    except Exception as e:
+        write_to_log(f"[DB_PROTOCOL] - confirm reset failed: {e}")
+
+
+def confirm_password_reset(email, token, new_password):
+    try:
+        now = int(time.time())
+        connection = sqlite3.connect(DB_FILE_NAME)
+        cursor = connection.cursor()
+
+        # Validate token and time
+        cursor.execute('''
+            SELECT token, expiration_timestamp FROM PasswordResetRequests WHERE email = ?
+        ''', (email,))
+        row = cursor.fetchone()
+        if not row:
+            connection.close()
+            return "Reset not requested"
+
+        stored_token, expiration = row
+        if token != stored_token:
+            connection.close()
+            return "Invalid token"
+        if now > expiration:
+            cursor.execute("DELETE FROM PasswordResetRequests WHERE email = ?", (email,))
+            connection.commit()
+            connection.close()
+            return "Token expired"
+
+        # Hash new password and update Users table
+        hashed = hash_password(new_password)
+        cursor.execute('''
+            UPDATE Users SET hashed_password = ? WHERE email = ?
+        ''', (hashed, email))
+
+        # Delete reset request
+        cursor.execute("DELETE FROM PasswordResetRequests WHERE email = ?", (email,))
+        connection.commit()
+        connection.close()
+
+        return "Password reset success"
+    except Exception as e:
+        write_to_log(f"[DB_PROTOCOL] - confirm reset failed: {e}")
 
 
 def register_client(data):
@@ -183,6 +329,13 @@ def register_client(data):
         connection.commit()
         connection.close()
         return REG_SUCCESS
+    except Exception as e:
+        write_to_log("[DB_PROTOCOL] - exception on registering a client - {}".format(e))
+
+
+def confirm_registration(data):
+    try:
+        pass
     except Exception as e:
         write_to_log("[DB_PROTOCOL] - exception on registering a client - {}".format(e))
 
@@ -627,4 +780,5 @@ def fetch_song_names(offset=0, amount=10):
 
 
 if __name__ == "__main__":
+    print(str(uuid.uuid4()))
     pass

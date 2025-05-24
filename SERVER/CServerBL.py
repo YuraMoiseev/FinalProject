@@ -1,7 +1,9 @@
+# Libraries
 import threading
-from Protocol import *
-from PacketProtocol import *
-from RequestProtocol import *
+
+# Local
+from Protocols.RequestProtocol import *
+from SERVER.config_utils.utils import LOG_FILE
 
 
 # events
@@ -115,7 +117,8 @@ class CClientHandler(threading.Thread):
     def exchange_rsa_keys(self):
         key = load_pem(self._private_key.public_key())
         self.client_public_key = receive_key(self.client_socket)
-        self.client_socket.send(f"{len(str(key)):0{HEADER_LEN}d}{key.decode()}".encode(FORMAT))
+        key_string = f"{len(str(key)):0{HEADER_LEN}d}{key.decode(FORMAT)}".encode(FORMAT)
+        self.client_socket.send(key_string)
         
 
     def close_socket(self):
