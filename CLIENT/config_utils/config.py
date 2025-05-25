@@ -1,3 +1,4 @@
+# General Constants
 CLIENT_HOST: str = "127.0.0.1"
 SERVER_HOST: str = "0.0.0.0"
 PORT: int = 55555
@@ -6,7 +7,8 @@ HEADER_LEN: int = 4
 FORMAT: str = 'utf-8'
 DISCONNECT_MSG: str = "EXIT"
 
-INVALID_CHARACTERS = [",", "{", "}"]
+
+# Request/Response messages
 REG_FAIL_USERNAME: str = "Username/Email is already taken"
 REG_SUCCESS: str = "User registered successfully"
 LOGIN_FAIL: str = "Login failed"
@@ -22,13 +24,18 @@ SEND_FILE_FAIL: str = "Could not transfer wav file"
 POP_UP_LABEL1: str = "There has been found a session associated with your device. Do you want to log in via the existing session?"
 POP_UP_LABEL2: str = "Choose one of the options!"
 POP_UP_LABEL3: str = "Do you want to save the existing session to log into the account without having to enter user data?"
+ERROR_MSGS = ["Error", "error", "Server workflow terminated"]
 
+
+# Security
 KEY_ROTATION_COUNTDOWN: int = 100
 
-ERROR_MSGS = ["Error", "error", "Server workflow terminated"]
+INVALID_CHARACTERS = [",", "{", "}"]
 
 DELIMITER = b"||"
 SESSION_TOKEN_DELIMITER = "_"
+
+# GUI Styles
 
 BUTTON_STYLE_SHEET: str = '''QPushButton {
                     font: 14pt "Arial";
@@ -117,4 +124,11 @@ TABLE_STYLE_SHEET = """
     }
 """
 
+
+# Recording audio
+recording_path: str = "temp/recording.wav"
+seconds: int = 5
+chunk: int = 1024  # Record in chunks of 1024 samples
+channels: int = 1
+fs: int = 44100  # Record at 44100 samples per second
 

@@ -8,10 +8,15 @@ import hmac
 import hashlib
 import secrets
 import string
+from dotenv import load_dotenv
+from pathlib import Path
+import os
 
 # Local
-from SERVER.config_utils.config import FORMAT, SECRET_KEY
+from SERVER.config_utils.config import FORMAT
 from SERVER.config_utils.utils import write_to_log
+
+load_dotenv(Path("config_utils/secrets.env")) # load sensitive variables
 
 def to_bytes(data):
     if not isinstance(data, bytes):
@@ -20,40 +25,6 @@ def to_bytes(data):
 
 def create_private_key(public_exponent=65537, key_size=2048):
     return rsa.generate_private_key(public_exponent=public_exponent, key_size=key_size)
-
-def create_signature(private_key, data):
-    try:
-        data = to_bytes(data)
-        # Create the signature
-        signature = private_key.sign(
-            data,
-            padding.PSS(
-                mgf=padding.MGF1(hashes.SHA256()),
-                salt_length=padding.PSS.MAX_LENGTH
-            ),
-            hashes.SHA256()
-        )
-        return signature
-    except Exception as e:
-        write_to_log("[SECURITY_PROTOCOL] signature creation failed with exception {}".format(e))
-        return None
-
-def verify_signature(public_key, signature, data):
-    try:
-        data = to_bytes(data)
-        # Verify the signature
-        public_key.verify(
-            signature,
-            data,
-            padding.PSS(
-                mgf=padding.MGF1(hashes.SHA256()),
-                salt_length=padding.PSS.MAX_LENGTH
-            ),
-            hashes.SHA256()
-        )
-        print("Signature is valid.")
-    except Exception as e:
-        write_to_log("[SECURITY_PROTOCOL] signature verification failed with exception {}".format(e))
 
 def encrypt_rsa(public_key, data):
     try:
@@ -124,7 +95,11 @@ def generate_session_code(length=16):
     return session_code
 
 def hash_session_code(session_code):
-    return hmac.new(SECRET_KEY, session_code.encode(), hashlib.sha256).hexdigest()
+    try:
+        secret_key = to_bytes(os.getenv("SECRET_KEY"))
+        return hmac.new(secret_key, session_code.encode(), hashlib.sha256).hexdigest()
+    except Exception as e:
+        write_to_log(f"Exception on hashing - {e}")
 
 
 def generate_fernet_key():
@@ -166,3 +141,7 @@ def decrypt_fernet(fernet_key: bytes, encrypted_data: bytes) -> bytes:
         return decrypted_data
     except Exception as e:
         write_to_log("[SECURITY_PROTOCOL] message encryption (Fernet) failed with exception {}".format(e))
+
+
+if __name__ == "__main__":
+    pass

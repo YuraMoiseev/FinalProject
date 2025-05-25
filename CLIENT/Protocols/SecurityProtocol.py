@@ -6,10 +6,15 @@ from cryptography.fernet import Fernet
 from argon2 import PasswordHasher
 import secrets
 import string
+from dotenv import load_dotenv
+from pathlib import Path
+import os
 
 # Local
 from CLIENT.config_utils.config import FORMAT
 from CLIENT.config_utils.utils import write_to_log
+
+load_dotenv(Path("config_utils/secrets.env")) # load sensitive variables
 
 def to_bytes(data):
     if not isinstance(data, bytes):
@@ -161,3 +166,19 @@ def decrypt_fernet(fernet_key: bytes, encrypted_data: bytes) -> bytes:
         return decrypted_data
     except Exception as e:
         write_to_log("[SECURITY_PROTOCOL] message encryption (Fernet) failed with exception {}".format(e))
+
+
+def encrypt_session(session:str) -> str:
+    try:
+        f_key = to_bytes(os.getenv("SECRET_KEY"))
+        return encrypt_fernet(f_key, to_bytes(session)).decode()
+    except Exception as e:
+        write_to_log("[SECURITY_PROTOCOL] session encryption (Fernet) failed with exception {}".format(e))
+
+
+def decrypt_session(session:str) -> str:
+    try:
+        f_key = to_bytes(os.getenv("SECRET_KEY"))
+        return decrypt_fernet(f_key, to_bytes(session)).decode()
+    except Exception as e:
+        write_to_log("[SECURITY_PROTOCOL] session decryption (Fernet) failed with exception {}".format(e))

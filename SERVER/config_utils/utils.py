@@ -30,3 +30,7 @@ def verify_entry_validity(username: str, email: str, password: str):
         return False, "Password is invalid - prohibited characters used"
     return True, ""
 
+def literal_bool(boo:str):
+    if boo == "True" or boo == "1":
+        return True
+    return False

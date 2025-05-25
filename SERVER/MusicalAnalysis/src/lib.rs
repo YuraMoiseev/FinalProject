@@ -21,7 +21,7 @@ pub mod wasc {
         x0: 0.02,
         y0: 0.1,
         w: 25.0,
-        a: 3.0,
+        a: 5.0,
         b: 10.0,
     };
 
@@ -39,7 +39,7 @@ pub mod wasc {
         x0: 0.1,
         y0: 0.1,
         w: 3.0,
-        a: 5.0,
+        a: 2.0,
         b: 10.0,
     };
 }
@@ -62,22 +62,6 @@ impl MIDITrack {
     }
 }
 
-// impl<'a> FromPyObject<'a> for MIDITrack {
-//     fn extract(ob: &'a PyAny) -> PyResult<Self> {
-//         let notes = ob.get_item(0)?
-//             .extract::<Vec<f64>>()?;
-//         let times = ob.get_item(1)?
-//             .extract::<Vec<f64>>()?;
-//         let directions = ob.get_item(2)?
-//             .extract::<Vec<f64>>()?;
-
-//         Ok(MIDITrack {
-//             notes,
-//             times,
-//             directions,
-//         })
-//     }
-// }
 
 #[pyclass]
 struct MidiDTW {
@@ -128,7 +112,7 @@ impl MidiDTW {
         }
     }
 
-    /// Compute the best DTW distance by sliding a window (of length equal to `seq1`)
+    /// Compute the best DTW distance by sliding a window (of length equal to `seq1` with a factor of resolution ratio)
     /// over `seq2`. The evaluation over candidate windows is done in parallel.
     /// 
     /// Notes on optimizations:
@@ -214,7 +198,7 @@ fn dtw_with_threshold(seq1: &[f64], seq2: &[f64]) -> f64 {
         return f64::INFINITY;
     }
 
-    let band = ((m as f64) * 0.2).floor() as usize;
+    let band = ((m as f64) * 0.1).floor() as usize;
     let mut prev_row = vec![f64::INFINITY; m + 1];
     let mut curr_row = vec![f64::INFINITY; m + 1];
     prev_row[0] = 0.0;

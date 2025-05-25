@@ -4,6 +4,8 @@ import queue
 import threading
 import time
 import os
+
+from PIL.ImageChops import offset
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import QPropertyAnimation, QSequentialAnimationGroup, QParallelAnimationGroup, QPoint, Qt, QTimer
 from PyQt5 import uic
@@ -14,7 +16,7 @@ from PyQt5.QtWidgets import QProgressDialog, QMessageBox
 from CLIENT.CClientBL import CClientBL
 from CLIENT.GUI.PyQtExtensions import QFileDropWidget, QPopUpWidget
 from CLIENT.Protocols.Protocol import send_file
-from CLIENT.config_utils.config import *
+import CLIENT.config_utils.config as config
 from CLIENT.config_utils.utils import write_to_log, is_file_present, verify_entry_validity
 
 
@@ -43,14 +45,14 @@ class CConnectGUI(QMainWindow):
         self.port_label = self.findChild(QLabel, "LabelPort")
 
         self.host_entry = self.findChild(QLineEdit, "LineEditHost")
-        self.host_entry.setText(str(CLIENT_HOST))
-        self.host_entry.setStyleSheet(ENTRY_STYLE_SHEET)
+        self.host_entry.setText(str(config.CLIENT_HOST))
+        self.host_entry.setStyleSheet(config.ENTRY_STYLE_SHEET)
         self.port_entry = self.findChild(QLineEdit, "LineEditPort")
-        self.port_entry.setText(str(PORT))
-        self.port_entry.setStyleSheet(ENTRY_STYLE_SHEET)
+        self.port_entry.setText(str(config.PORT))
+        self.port_entry.setStyleSheet(config.ENTRY_STYLE_SHEET)
 
         self.connect_button = self.findChild(QPushButton, "ButtonConnect")
-        self.connect_button.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.connect_button.setStyleSheet(config.BUTTON_STYLE_SHEET)
         self.connect_button.clicked.connect(self.on_click_connect)
         self.show()
 
@@ -92,7 +94,7 @@ class CClientGUI(CClientBL, QMainWindow):
         uic.loadUi('GUI/UIs/ErrorWindowGUI.ui', self)
         self.setFixedSize(600, 400)
         self.button_back = self.findChild(QPushButton, "ButtonBack")
-        self.button_back.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.button_back.setStyleSheet(config.BUTTON_STYLE_SHEET)
         self.button_back.clicked.connect(self.on_click_back)
         self.show()
 
@@ -168,13 +170,13 @@ class CClientGUI(CClientBL, QMainWindow):
 
         self.welcome_label = self.findChild(QLabel, "LabelWelcome")
         self.button_reg = self.findChild(QPushButton, "ButtonRegister")
-        self.button_reg.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.button_reg.setStyleSheet(config.BUTTON_STYLE_SHEET)
         self.button_reg.setFixedSize(200, 50)
         self.button_login = self.findChild(QPushButton, "ButtonLogin")
-        self.button_login.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.button_login.setStyleSheet(config.BUTTON_STYLE_SHEET)
         self.button_login.setFixedSize(200, 50)
         self.button_back = self.findChild(QPushButton, "ButtonBack")
-        self.button_back.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.button_back.setStyleSheet(config.BUTTON_STYLE_SHEET)
 
         self.button_reg.clicked.connect(self.on_click_register)
         self.button_login.clicked.connect(self.on_click_login)
@@ -195,16 +197,17 @@ class CClientGUI(CClientBL, QMainWindow):
         self.safe_send(f"Login_with_session")
         result = self.safe_receive()
         success, session_code = result.body.get("msg", ""), result.body.get("session", "")
-        if success == LOGIN_SUCCESS:
+        self.refresh_session_file(session_code)
+        self.check_existing_session()
+        if success == config.LOGIN_SUCCESS:
             self.windows.clear()
-            pop_up = QPopUpWidget(POP_UP_LABEL1, POP_UP_LABEL2, self)
+            pop_up = QPopUpWidget(config.POP_UP_LABEL1, config.POP_UP_LABEL2, self)
             if pop_up.exec_():
-                self.refresh_session_file(session_code)
-                self.check_existing_session()
                 self.windows.append(MainWindow(parent_wnd=self))
                 self.hide()
             else:
                 self.safe_send(f"Delete_session")
+                self.safe_receive()
                 self.windows.append(CLoginGUI(parent_wnd=self, client_object=self))
                 self.hide()
                 self.windows[-1].create_login_ui()
@@ -217,7 +220,7 @@ class CClientGUI(CClientBL, QMainWindow):
         if not self.connected:
             event.accept()
         else:
-            self.safe_send(DISCONNECT_MSG)
+            self.safe_send(config.DISCONNECT_MSG)
             if self.safe_receive() == "Bye!":
                 event.accept()
             else:
@@ -241,7 +244,7 @@ class CClientGUI(CClientBL, QMainWindow):
     # terminates the workflow in case of an exception arising
     def safe_receive(self):
         receive = self.receive_data()
-        if receive.body["msg"] in ERROR_MSGS:
+        if receive.body["msg"] in config.ERROR_MSGS:
             self.forced_termination()
         else:
             return receive
@@ -249,7 +252,7 @@ class CClientGUI(CClientBL, QMainWindow):
     # in case the connection is broken and termination is required
     def forced_termination(self):
         self.connected = False
-        pop_up = QPopUpWidget("An error occurred in the workflow. The application will be terminated", POP_UP_LABEL2, self, (1, ["OK"]))
+        pop_up = QPopUpWidget("An error occurred in the workflow. The application will be terminated", config.POP_UP_LABEL2, self, (1, ["OK"]))
         pop_up.exec_()
         for window in self.windows:
             window.close()
@@ -291,20 +294,20 @@ class CLoginGUI(QDialog):
 
         self.label_login = self.findChild(QLabel, "LabelLogin")
         self.login_entry = self.findChild(QLineEdit, "LineEditLogin")
-        self.login_entry.setStyleSheet(ENTRY_STYLE_SHEET)
+        self.login_entry.setStyleSheet(config.ENTRY_STYLE_SHEET)
 
         self.label_password = self.findChild(QLabel, "LabelPassword")
         self.password_entry = self.findChild(QLineEdit, "LineEditPassword")
-        self.password_entry.setStyleSheet(ENTRY_STYLE_SHEET)
+        self.password_entry.setStyleSheet(config.ENTRY_STYLE_SHEET)
         self.password_entry.setEchoMode(QLineEdit.Password)
 
         self.button_login = self.findChild(QPushButton, "ButtonLogin")
         self.button_forgot_pw = self.findChild(QPushButton, "ButtonForgotPW")
         self.button_back = self.findChild(QPushButton, "ButtonBack")
 
-        self.button_login.setStyleSheet(BUTTON_STYLE_SHEET)
-        self.button_forgot_pw.setStyleSheet(BUTTON_STYLE_SHEET)
-        self.button_back.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.button_login.setStyleSheet(config.BUTTON_STYLE_SHEET)
+        self.button_forgot_pw.setStyleSheet(config.BUTTON_STYLE_SHEET)
+        self.button_back.setStyleSheet(config.BUTTON_STYLE_SHEET)
 
         self.button_login.clicked.connect(self.on_click_login)
         self.button_forgot_pw.clicked.connect(self.on_click_forgot_pw)
@@ -322,23 +325,23 @@ class CLoginGUI(QDialog):
 
         self.label_login = self.findChild(QLabel, "LabelLogin")
         self.login_entry = self.findChild(QLineEdit, "LineEditLogin")
-        self.login_entry.setStyleSheet(ENTRY_STYLE_SHEET)
+        self.login_entry.setStyleSheet(config.ENTRY_STYLE_SHEET)
 
         self.label_email = self.findChild(QLabel, "LabelEmail")
         self.email_entry = self.findChild(QLineEdit, "LineEditEmail")
-        self.email_entry.setStyleSheet(ENTRY_STYLE_SHEET)
+        self.email_entry.setStyleSheet(config.ENTRY_STYLE_SHEET)
         self.email_entry.setText("@gmail.com")
 
         self.label_password = self.findChild(QLabel, "LabelPassword")
         self.password_entry = self.findChild(QLineEdit, "LineEditPassword")
-        self.password_entry.setStyleSheet(ENTRY_STYLE_SHEET)
+        self.password_entry.setStyleSheet(config.ENTRY_STYLE_SHEET)
         self.password_entry.setEchoMode(QLineEdit.Password)
 
         self.button_register = self.findChild(QPushButton, "ButtonRegister")
         self.button_back = self.findChild(QPushButton, "ButtonBack")
 
-        self.button_register.setStyleSheet(BUTTON_STYLE_SHEET)
-        self.button_back.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.button_register.setStyleSheet(config.BUTTON_STYLE_SHEET)
+        self.button_back.setStyleSheet(config.BUTTON_STYLE_SHEET)
 
         self.button_register.clicked.connect(self.on_click_register)
         self.button_back.clicked.connect(self.back_to_home)
@@ -362,7 +365,7 @@ class CLoginGUI(QDialog):
                 data = {"login": login, "email": email, "password": password}
                 self._parent_wnd.safe_send(f"Register", data)
                 result = self._parent_wnd.safe_receive()
-                if result.body.get("msg", "") != REG_SUCCESS:
+                if result.body.get("msg", "") != config.REG_SUCCESS:
                     self.label_reg_fail.show()
                     self.label_reg_fail.setText(result.body.get("msg", ""))
                 else:
@@ -377,7 +380,7 @@ class CLoginGUI(QDialog):
         self._parent_wnd.safe_send(f"Login_with_data", data)
         message = self._parent_wnd.safe_receive()
         success, session = message.body["msg"], message.body["session"]
-        if success != LOGIN_SUCCESS:
+        if success != config.LOGIN_SUCCESS:
             self.label_login_fail.setText(success)
             self.label_login_fail.show()
         else:
@@ -417,10 +420,10 @@ class ForgotPasswordGUI(QDialog):
         self.setFixedSize(800, 800)
 
         self.entry_email = self.findChild(QLineEdit, "LineEditEmail")
-        self.entry_email.setStyleSheet(ENTRY_STYLE_SHEET)
+        self.entry_email.setStyleSheet(config.ENTRY_STYLE_SHEET)
 
         self.entry_code = self.findChild(QLineEdit, "LineEditCode")
-        self.entry_code.setStyleSheet(ENTRY_STYLE_SHEET)
+        self.entry_code.setStyleSheet(config.ENTRY_STYLE_SHEET)
         self.entry_code.setPlaceholderText("Enter code after requesting it")
 
         self.label_explain = self.findChild(QLabel, "LabelExplain")
@@ -431,11 +434,11 @@ class ForgotPasswordGUI(QDialog):
         self.label_status.hide()
 
         self.button_back = self.findChild(QPushButton, "ButtonBack")
-        self.button_back.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.button_back.setStyleSheet(config.BUTTON_STYLE_SHEET)
         self.button_back.clicked.connect(self.on_click_back)
 
         self.button_send = self.findChild(QPushButton, "ButtonSendOrVerify")
-        self.button_send.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.button_send.setStyleSheet(config.BUTTON_STYLE_SHEET)
         self.button_send.clicked.connect(self.on_click_send_or_verify)
 
         self.show()
@@ -518,11 +521,11 @@ class ResetPasswordGUI(QDialog):
         self.setFixedSize(700, 700)
 
         self.entry_new_pw = self.findChild(QLineEdit, "LineEditNew")
-        self.entry_new_pw.setStyleSheet(ENTRY_STYLE_SHEET)
+        self.entry_new_pw.setStyleSheet(config.ENTRY_STYLE_SHEET)
         self.entry_new_pw.setEchoMode(QLineEdit.Password)
 
         self.entry_confirm_pw = self.findChild(QLineEdit, "LineEditVerify")
-        self.entry_confirm_pw.setStyleSheet(ENTRY_STYLE_SHEET)
+        self.entry_confirm_pw.setStyleSheet(config.ENTRY_STYLE_SHEET)
         self.entry_confirm_pw.setEchoMode(QLineEdit.Password)
 
         self.label_status = self.findChild(QLabel, "LabelStatus")
@@ -530,11 +533,11 @@ class ResetPasswordGUI(QDialog):
         self.label_status.hide()
 
         self.button_back = self.findChild(QPushButton, "ButtonBack")
-        self.button_back.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.button_back.setStyleSheet(config.BUTTON_STYLE_SHEET)
         self.button_back.clicked.connect(self.on_click_back)
 
         self.button_confirm = self.findChild(QPushButton, "ButtonSend")
-        self.button_confirm.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.button_confirm.setStyleSheet(config.BUTTON_STYLE_SHEET)
         self.button_confirm.clicked.connect(self.on_click_confirm)
 
         self.show()
@@ -617,10 +620,10 @@ class MainWindow(QMainWindow):
 
         self.button_back = self.findChild(QPushButton, "ButtonBack")
 
-        self.button_trace.setStyleSheet(BUTTON_STYLE_SHEET)
-        self.button_songs.setStyleSheet(BUTTON_STYLE_SHEET)
-        self.button_requests.setStyleSheet(BUTTON_STYLE_SHEET)
-        self.button_back.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.button_trace.setStyleSheet(config.BUTTON_STYLE_SHEET)
+        self.button_songs.setStyleSheet(config.BUTTON_STYLE_SHEET)
+        self.button_requests.setStyleSheet(config.BUTTON_STYLE_SHEET)
+        self.button_back.setStyleSheet(config.BUTTON_STYLE_SHEET)
 
         self.button_back.clicked.connect(self.on_click_back)
         self.button_trace.clicked.connect(self.on_click_trace)
@@ -637,9 +640,9 @@ class MainWindow(QMainWindow):
         if self.children_requests_window is None:
             self.children_requests_window = RequestWindow(self, self._parent_wnd)
 
-
     def on_click_songs(self):
-        print("Will be done later...")
+        if self.children_songs_window is None:
+            self.children_songs_window = SongsWindow(self, self._parent_wnd)
 
     def on_click_back(self):
         is_sent = self._parent_wnd.safe_send("Delete_session")
@@ -653,7 +656,7 @@ class MainWindow(QMainWindow):
         if not self._parent_wnd.connected:
             event.accept()
         else:
-            self._parent_wnd.safe_send(DISCONNECT_MSG)
+            self._parent_wnd.safe_send(config.DISCONNECT_MSG)
             if self._parent_wnd.safe_receive().body.get("msg", "") == "Bye!":
                 event.accept()
             else:
@@ -681,7 +684,7 @@ class RecordWindow(QMainWindow):
         self.label_record = self.findChild(QLabel, "LabelRecord")
 
         self.button_back = self.findChild(QPushButton, "ButtonBack")
-        self.button_back.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.button_back.setStyleSheet(config.BUTTON_STYLE_SHEET)
         self.button_record = self.findChild(QPushButton, "ButtonRecord")
         self.button_record.setStyleSheet("""
         QPushButton {
@@ -715,26 +718,29 @@ class RecordWindow(QMainWindow):
 
     def _record(self, q):
         self._client_object.update_thread_lock = True
-        self._client_object.record_wav("CLIENT/temp/recording.wav")
-        self.label_record.setText("Recording done. Sending data to the server...")
-        self._client_object.safe_send(SEARCH_SONG_REQUEST)
-        send_file("CLIENT/temp/recording.wav", self._client_object._client_socket, self._client_object.packet_handler)
-        # send_file("/MusicFiles/Audio/RitD.wav", self._client_object._client_socket, self._client_object.packet_handler)
-        result = json.loads(self._client_object.safe_receive().body.get("msg", ""))
-        displayed_text = "Found songs \n"
-        for i in result:
-            displayed_text += f"{i[1]} by {i[2]} is {i[0]:.2f}% similar to your recording, at the time {int(i[3]//60)}:{int(i[3]%60//1):02} \n"
-        q.put(displayed_text)
-        self._client_object.update_thread_lock = False
-        try:
-            os.remove("recording.wav")
-            write_to_log(f"File 'recording.wav' has been deleted successfully.")
-        except Exception as e:
-            write_to_log(f"An error occurred: {e}")
-        if not self._client_object.is_recording:
-            return
+        is_recorded = self._client_object.record_wav(config.recording_path)
+        if is_recorded:
+            self._client_object.cond()
+            self.label_record.setText("Recording done. Sending data to the server...")
+            self._client_object.safe_send(config.SEARCH_SONG_REQUEST)
+            send_file(config.recording_path, self._client_object._client_socket, self._client_object.packet_handler)
+            result = json.loads(self._client_object.safe_receive().body.get("msg", ""))
+            displayed_text = "Found songs: \n"
+            for i in result:
+                displayed_text += f"{i[1]} by {i[2]} is {i[0]:.2f}% similar to your recording, at the time {int(i[3]//60)}:{int(i[3]%60//1):02} \n\n"
+            q.put(displayed_text)
+            self._client_object.update_thread_lock = False
+            self.label_record.setText("Record")
+            try:
+                os.remove(config.recording_path)
+                write_to_log(f"File 'recording.wav' has been deleted successfully.")
+            except Exception as e:
+                write_to_log(f"An error occurred: {e}")
+            if not self._client_object.is_recording:
+                return
+        else:
+            self.label_record.setText("Recording was terminated or faced an error.")
 
-        self._client_object.cond()
         # time.sleep(3)
         self.label_record.setText("Record")
 
@@ -751,7 +757,7 @@ class RecordWindow(QMainWindow):
             progress_dialog.setWindowModality(Qt.WindowModal)
             label = progress_dialog.findChild(QLabel)  # Get the QLabel inside the dialog
             if label:
-                label.setStyleSheet(LABEL_STYLE_SHEET)
+                label.setStyleSheet(config.LABEL_STYLE_SHEET)
 
             # Queue to retrieve results from the thread
             q = queue.Queue()
@@ -797,6 +803,74 @@ class RecordWindow(QMainWindow):
         event.accept()
 
 
+class SongsWindow(QMainWindow):
+    def __init__(self, parent_wnd=None, client_object=None):
+        super().__init__()
+
+        self.label_title = None
+        self.song_list = None
+        self.button_back = None
+        self.button_load_more = None
+
+        self._parent_wnd = parent_wnd
+        self._client_object = client_object
+        self.offset = 0
+
+        self.create_main_ui()
+
+    def create_main_ui(self):
+        uic.loadUi("GUI/UIs/SongsWindowGUI.ui", self)
+        self.setFixedSize(1200, 800)
+
+        self.label_title = self.findChild(QLabel, "LabelTitle")
+        self.button_back = self.findChild(QPushButton, "ButtonBack")
+        self.button_back.setStyleSheet(config.BUTTON_STYLE_SHEET)
+        self.button_back.clicked.connect(self.on_click_back)
+
+        self.button_load_more = self.findChild(QPushButton, "ButtonLoadMore")
+        self.button_load_more.setStyleSheet(config.BUTTON_STYLE_SHEET)
+        self.button_load_more.clicked.connect(self.load_more)
+
+        self.song_list = self.findChild(QTableWidget, "SongsTable")
+        self.song_list.setStyleSheet(config.TABLE_STYLE_SHEET)
+
+        self.set_up_request_table_widget()
+        self.load_more()
+        self.show()
+
+    def set_up_request_table_widget(self):
+        self.song_list.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.song_list.setSelectionBehavior(QTableWidget.SelectRows)
+        self.song_list.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.song_list.verticalHeader().setVisible(False)
+
+    def on_click_back(self):
+        self._parent_wnd.show()
+        self.close()
+
+    def load_more(self):
+        self._client_object.safe_send("Songs", {"offset": self.offset})
+        result = self._client_object.safe_receive()
+        res, songs = result.body.get("msg", ""), result.body.get("args", {})
+
+        if not isinstance(songs, dict):
+            return
+
+        print(1)
+
+        row_count = self.song_list.rowCount()
+        self.song_list.setRowCount(row_count + len(songs))
+
+        print(2)
+
+        for i, (song, artist) in enumerate(songs.items()):
+            self.song_list.setItem(row_count + i, 0, QTableWidgetItem(song))
+            self.song_list.setItem(row_count + i, 1, QTableWidgetItem(artist))
+
+        print(3)
+        self.offset += len(songs)
+
+
 class RequestWindow(QMainWindow):
     def __init__(self, parent_wnd=None, client_object=None):
         QMainWindow.__init__(self)
@@ -832,19 +906,19 @@ class RequestWindow(QMainWindow):
 
         self.label_name = self.findChild(QLabel, "LabelName")
         self.name_entry = self.findChild(QLineEdit, "LineEditName")
-        self.name_entry.setStyleSheet(ENTRY_STYLE_SHEET)
+        self.name_entry.setStyleSheet(config.ENTRY_STYLE_SHEET)
 
         self.label_artist = self.findChild(QLabel, "LabelArtist")
         self.artist_entry = self.findChild(QLineEdit, "LineEditArtist")
-        self.artist_entry.setStyleSheet(ENTRY_STYLE_SHEET)
+        self.artist_entry.setStyleSheet(config.ENTRY_STYLE_SHEET)
 
         self.label_link = self.findChild(QLabel, "LabelLink")
         self.link_entry = self.findChild(QLineEdit, "LineEditLink")
-        self.link_entry.setStyleSheet(ENTRY_STYLE_SHEET)
+        self.link_entry.setStyleSheet(config.ENTRY_STYLE_SHEET)
 
         self.label_description = self.findChild(QLabel, "LabelDescription")
         self.description_entry = self.findChild(QLineEdit, "LineEditDescription")
-        self.description_entry.setStyleSheet(ENTRY_STYLE_SHEET)
+        self.description_entry.setStyleSheet(config.ENTRY_STYLE_SHEET)
 
         self.entries.append(self.name_entry)
         self.entries.append(self.artist_entry)
@@ -857,8 +931,8 @@ class RequestWindow(QMainWindow):
         self.button_send_request = self.findChild(QPushButton, "ButtonRequest")
         self.button_back = self.findChild(QPushButton, "ButtonBack")
 
-        self.button_send_request.setStyleSheet(BUTTON_STYLE_SHEET)
-        self.button_back.setStyleSheet(BUTTON_STYLE_SHEET)
+        self.button_send_request.setStyleSheet(config.BUTTON_STYLE_SHEET)
+        self.button_back.setStyleSheet(config.BUTTON_STYLE_SHEET)
 
         self.button_send_request.clicked.connect(self.on_click_send_request)
         self.button_back.clicked.connect(self.back_to_home)

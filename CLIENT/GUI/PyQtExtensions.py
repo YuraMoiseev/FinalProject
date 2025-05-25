@@ -1,6 +1,7 @@
 # Libraries
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import  Qt, QPoint
+from PyQt5.QtWidgets import QScrollArea
 
 # Local
 from CLIENT.config_utils.config import DROP_FILE_STYLE_SHEET, LABEL_STYLE_SHEET, ERROR_LABEL_STYLE_SHEET, BUTTON_STYLE_SHEET, TABLE_STYLE_SHEET
@@ -134,17 +135,23 @@ class QPopUpWidget(QDialog):
         self.setFixedSize(350, 300)
 
         self.layout = QVBoxLayout()
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setStyleSheet("border: none;")
+
         self.label_info = QLabel(labeltext1)
         self.label_info.setStyleSheet(LABEL_STYLE_SHEET)
         self.label_info.setWordWrap(True)
-        self.layout.addWidget(self.label_info)
+        self.label_info.setMinimumWidth(300)
+
+        scroll_area.setWidget(self.label_info)
+        self.layout.addWidget(scroll_area)
 
         self.label_error = QLabel(labeltext2)
         self.label_error.setStyleSheet(ERROR_LABEL_STYLE_SHEET)
         self.layout.addWidget(self.label_error)
         self.label_error.hide()
 
-        print("Initing first button")
         self.button_1 = QPushButton(buttons[1][0])
         self.button_1.setStyleSheet(BUTTON_STYLE_SHEET)
         self.button_1.clicked.connect(self.on_click_positive)
@@ -157,9 +164,7 @@ class QPopUpWidget(QDialog):
             self.button_2.clicked.connect(self.on_click_negative)
             self.layout.addWidget(self.button_2)
 
-        print("Setting Layot")
         self.setLayout(self.layout)
-        print("Init done.")
 
     # override if needed
     def on_click_positive(self):

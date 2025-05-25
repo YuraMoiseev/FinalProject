@@ -3,11 +3,15 @@ import pyaudio
 import wave
 import subprocess
 import hashlib
+import os
+import socket
 
 # Local
-from CLIENT.Protocols.Protocol import *
-from CLIENT.Protocols.PacketProtocol import *
-from CLIENT.config_utils.config import HEADER_LEN, DISCONNECT_MSG, KEY_ROTATION_COUNTDOWN, CLIENT_HOST, PORT, SEARCH_SONG_REQUEST, FORMAT
+from CLIENT.Protocols.Protocol import create_private_key, load_pem, receive_key, pack_message, receive_msg
+from CLIENT.Protocols.PacketProtocol import PacketHandler, Packet, SessionToken, Agent, MsgType, EncryptionKey, DumpType
+from CLIENT.Protocols.SecurityProtocol import encrypt_session, decrypt_session
+import CLIENT.config_utils.config as config
+from CLIENT.config_utils.utils import write_to_log
 
 class CClientBL:
 
@@ -35,7 +39,7 @@ class CClientBL:
             # Check if the file exists and is non-empty
             if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
                 with open(file_path, "r") as f:
-                    self.session_token.session_code = f.read()
+                    self.session_token.session_code = decrypt_session(f.read())
 
             else:
                 self.session_token.session_code = ''
@@ -48,7 +52,7 @@ class CClientBL:
 
     def refresh_session_file(self, session, file_path="session.txt"):
         with open(file_path, "w") as f:
-            f.write(session)
+            f.write(encrypt_session(session))
         self.check_existing_session(file_path)
 
     def get_device_id(self):
@@ -83,14 +87,14 @@ class CClientBL:
 
     def exchange_rsa_keys(self):
         key = load_pem(self._private_key.public_key())
-        key_string = f"{len(str(key)):0{HEADER_LEN}d}{key.decode(FORMAT)}".encode(FORMAT)
+        key_string = f"{len(str(key)):0{config.HEADER_LEN}d}{key.decode(config.FORMAT)}".encode(config.FORMAT)
         self._client_socket.send(key_string)
         self.serv_public_key = receive_key(self._client_socket)
 
     def disconnect(self) -> bool:
         try:
             write_to_log(f"[CLIENT_BL] {self._client_socket.getsockname()} closing")
-            self.send_data(DISCONNECT_MSG, {})
+            self.send_data(config.DISCONNECT_MSG, {})
             self._client_socket.close()
             return True
         except Exception as e:
@@ -104,7 +108,7 @@ class CClientBL:
             key_message = pack_message(key_message_packet, self.packet_handler, EncryptionKey.RSA | DumpType.Short, self.serv_public_key)
             self._client_socket.send(key_message)
             self.receive_data(True)
-            self.key_rotation_countdown = KEY_ROTATION_COUNTDOWN
+            self.key_rotation_countdown = config.KEY_ROTATION_COUNTDOWN
         except Exception as e:
             write_to_log("[CLIENT_BL] Exception on rotating keys: {}".format(e))
             return False
@@ -138,7 +142,7 @@ class CClientBL:
                 return packet
             else:
                 if not ignore_id:
-                    self.delete_request(packet.body["id"])
+                    self.delete_request(packet.body["args"]["id"])
                 write_to_log(f"[CLIENT_BL] error on receiving data - {packet.body['msg']} with parse message {parse_msg}")
                 return packet
         except Exception as e:
@@ -179,11 +183,11 @@ class CClientBL:
     def record_wav(self, file_name: str = "recording.wav") -> bool:
         try:
             write_to_log(f"[CLIENT_BL] {self._client_socket.getsockname()} recording {file_name}...")
-            chunk = 1024  # Record in chunks of 1024 samples
+            chunk = config.chunk
             sample_format = pyaudio.paInt32  # 32 bits per sample
-            channels = 1
-            fs = 44100  # Record at 44100 samples per second
-            seconds = 3  # Record for 3 seconds
+            channels = config.channels
+            fs = config.fs
+            seconds = config.seconds
             p = pyaudio.PyAudio()  # Create an interface to PortAudio
 
             write_to_log('[CLIENT_BL] Recording wav file')
@@ -226,31 +230,7 @@ class CClientBL:
             return False
 
 
-import time
 if __name__ == "__main__":
-    # file_path = "C:/Users\Ymois\PycharmProjects\FinalProject\MusicFiles\Audio\TestAdele.wav"
-    file_path = "/MusicFiles/Audio/RitD.wav"
-    client = CClientBL(CLIENT_HOST, PORT)
-    client.connect()
-    # write_to_log(client.receive_data())
-    # client.send_wav("test.wav")
-    # client.send_wav("test.wav")
-    # client.send_wav("test1.wav")
-    # client.send_wav("test.wav")
-    # client.record_wav("recording.wav")
-    # client.send_wav("recording.wav")
-    # client.record_wav()
-    time.sleep(5)
-    client.send_data(f"Login_with_session", {})
-    a = client.receive_data()
-    write_to_log(str(a))
-    client.send_data(SEARCH_SONG_REQUEST, {})
-    a = client.receive_data()
-    write_to_log(str(a))
-    filename = "/MusicFiles/Audio/RitD.wav"
-    send_file(filename, client._client_socket, client.packet_handler)
-    a = client.receive_data()
-    write_to_log(str(a))
-    client.disconnect()
+    pass
 
 

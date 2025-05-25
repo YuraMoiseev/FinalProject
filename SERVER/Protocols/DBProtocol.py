@@ -6,9 +6,9 @@ import smtplib
 from email.message import EmailMessage
 
 # Local
-from SERVER.config_utils.config import *
+from SERVER.config_utils.config import DB_FILE_NAME, REG_FAIL_USERNAME, REG_SUCCESS, LOGIN_FAIL, LOGIN_SUCCESS
 from SERVER.config_utils.utils import write_to_log, verify_entry_validity
-from .SecurityProtocol import hash_password, verify_password, hash_session_code, generate_session_code
+from SERVER.Protocols.SecurityProtocol import hash_password, verify_password, hash_session_code, generate_session_code
 
 
 def create_db_tables():
@@ -56,7 +56,6 @@ def create_login_table():
     connection.close()
 
 
-# TODO add resolutions
 def create_songs_table():
     connection = sqlite3.connect(DB_FILE_NAME)
     cursor = connection.cursor()
@@ -333,13 +332,6 @@ def register_client(data):
         write_to_log("[DB_PROTOCOL] - exception on registering a client - {}".format(e))
 
 
-def confirm_registration(data):
-    try:
-        pass
-    except Exception as e:
-        write_to_log("[DB_PROTOCOL] - exception on registering a client - {}".format(e))
-
-
 def login_client(username_or_email, password):
     try:
         connection = sqlite3.connect(DB_FILE_NAME)
@@ -599,7 +591,7 @@ def add_request(data, session_id, file_path=None, file_type=None) -> str:
         return "Fail"
 
 
-def update_request(data, file_path=None, file_type=None) -> str:
+def update_request(data, file_path=None) -> str:
     try:
         song_name, artist_name, link, description, request_id, file_type = data["name"], data["artist"], data["link"], data["description"], data["id"], data["file_type"]
         # Connect to the database
@@ -668,7 +660,7 @@ def extract_file(table_name, file_path, row_id, column_file_name, column_file_ty
         write_to_log(f"[DB_PROTOCOL] file extract failed due to the exception {e}")
 
 
-def add_song(midi_file_path, song_name, artist_name, username):
+def add_song(midi_file_path, song_name, artist_name, resolution, username):
     # Connect to the database
     connection = sqlite3.connect(DB_FILE_NAME)
     cursor = connection.cursor()
@@ -679,9 +671,9 @@ def add_song(midi_file_path, song_name, artist_name, username):
 
     # Insert the data into the Songs table
     cursor.execute('''
-        INSERT INTO Songs (melodies, song_name, artist_name, added_by)
-        VALUES (?, ?, ?, ?);
-        ''', (blob_data, song_name, artist_name, username))
+        INSERT INTO Songs (melodies, song_name, artist_name, resolution, added_by)
+        VALUES (?, ?, ?, ?, ?);
+        ''', (blob_data, song_name, artist_name, resolution, username))
 
     connection.commit()
     connection.close()
@@ -780,5 +772,4 @@ def fetch_song_names(offset=0, amount=10):
 
 
 if __name__ == "__main__":
-    print(str(uuid.uuid4()))
     pass

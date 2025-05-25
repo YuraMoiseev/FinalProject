@@ -6,7 +6,6 @@ HEADER_LEN: int = 4
 FORMAT: str = 'utf-8'
 DISCONNECT_MSG: str = "EXIT"
 
-
 INVALID_CHARACTERS = [",", "{", "}"]
 REG_FAIL_USERNAME: str = "Username/Email is already taken"
 REG_SUCCESS: str = "User registered successfully"
@@ -23,8 +22,6 @@ SEND_FILE_FAIL: str = "Could not transfer wav file"
 POP_UP_LABEL1: str = "There has been found a session associated with your device. Do you want to log in via the existing session?"
 POP_UP_LABEL2: str = "Choose one of the options!"
 POP_UP_LABEL3: str = "Do you want to save the existing session to log into the account without having to enter user data?"
-
-KEY_ROTATION_COUNTDOWN: int = 100
 
 ERROR_MSGS = ["Error", "error", "Server workflow terminated"]
 
@@ -118,22 +115,13 @@ TABLE_STYLE_SHEET = """
     }
 """
 
-DB_FILE_NAME = "../SERVER/Protocols/DataBases.db"
-
-SECRET_KEY = b"Something_that_is_here_now_but_will_be_securely_stored_later"  # Keep this secret!
+DB_FILE_NAME = "C:/Users/Ymois/PycharmProjects/FinalProject/SERVER/Protocols/DataBases.db"
 
 REQUESTS_COLUMNS = {'Id': None, 'Song Name':None, 'Artist':None, 'Link':None, 'Description':None, 'File Type':None, 'Requester':None, 'Reject':None, 'Accept':None}
 USERS_COLUMNS = {'Id':None, 'Username':None, 'Admin':None}
 
 
-def literal_bool(boo:str):
-    if boo == "True" or boo == "1":
-        return True
-    return False
-
-
 VirtualEnv = "C:/Users/Ymois/PycharmProjects/FinalProject/venv/Scripts/activate"
-DemucsEnv = "C:/Users/Ymois/PycharmProjects/FinalProject/demucs_env/Scripts/activate"
 
 # Weighing and similarity constants
 """

@@ -1,13 +1,17 @@
 # Libraries
+import tensorflow
 import threading
 from PyQt5 import uic
+import time
+import os
 
 # Local
 from CServerBL import CServerBL
 from GUI.PyQtExtensions import *
-from MusicalAnalysis.MusicalAnalysis import validate_url, to_wav, AudioExtractor, AudioSeparator
-from Protocols.RequestProtocol import *
-from config_utils.utils import is_file_present
+from MusicalAnalysis.MusicalAnalysis import validate_url, to_wav, AudioExtractor, AudioSeparator, AudioAnalyzer
+from SERVER.Protocols.DBProtocol import toggle_client_status, fetch_requests, extract_file, delete_request, add_song, update_request
+from SERVER.config_utils.utils import is_file_present, literal_bool
+from SERVER.config_utils.config import SERVER_HOST, ENTRY_STYLE_SHEET, REQUESTS_COLUMNS, PORT
 
 class CHostGUI(QMainWindow):
     def __init__(self):
@@ -306,15 +310,16 @@ class CRequestsGUI(QMainWindow):
             os.remove(path_wav)
             # Analyze each stem and save as a whole midi file
             analyzer = AudioAnalyzer()
-            files = os.listdir(sep_dir)
-            for filename in files:
-                analyzer.change_base_file(os.path.join(os.getcwd(), sep_dir, filename))
-                analyzer.analyze_smart(filename, 0.05)  # Analyse with best suiting tools for each stem
-                os.remove(filename)
+            for filename in os.listdir(sep_dir):
+                if filename != "drums.wav":
+                    filepath = os.path.join(os.getcwd(), sep_dir, filename)
+                    print("Processing:", filepath)
+                    analyzer.change_base_file(filepath)
+                    analyzer.analyze_full(0.05, True, filename.split(".")[0])
             path_mid = analyzer.save_midi(f"Request_file_{request_id}_{int(time.time())}.mid")
             # Save the midi file to the database
             song_name, artist_name, requester = self.request_table.item(x, 1), self.request_table.item(x, 2), self.request_table.item(x, 6)
-            add_song(path_mid, song_name, artist_name, requester)
+            add_song(path_mid, song_name, artist_name, 0.05, requester)
             os.remove(path_mid)
             self.delete_request(x, _)
 
@@ -328,12 +333,15 @@ class CRequestsGUI(QMainWindow):
             # Analyze each stem and save as a whole midi file
             analyzer = AudioAnalyzer()
             for filename in os.listdir(sep_dir):
-                analyzer.change_base_file(os.path.join(os.getcwd(), sep_dir, filename))
-                analyzer.analyze_smart(filename, 0.05)  # Analyse with best suiting tools for each stem
+                if filename != "drums.wav":
+                    filepath = os.path.join(os.getcwd(), sep_dir, filename)
+                    print("Processing:", filepath)
+                    analyzer.change_base_file(filepath)
+                    analyzer.analyze_full(0.05, True, filename.split(".")[0])
             path_mid = analyzer.save_midi(f"Request_file_{request_id}_{int(time.time())}.mid")
             # Save the midi file to the database
             song_name, artist_name, requester = self.request_table.item(x, 1), self.request_table.item(x, 2), self.request_table.item(x, 6)
-            add_song(path_mid, song_name, artist_name, requester)
+            add_song(path_mid, song_name, artist_name, 0.05, requester)
             os.remove(path_mid)
             self.delete_request(x, _)
             write_to_log("Song successfully added!")
@@ -342,7 +350,7 @@ class CRequestsGUI(QMainWindow):
             path_wav = f"ServerFiles/Request_file_{request_id}_{int(time.time())}.mid"
             song_name, artist_name, requester = self.request_table.item(x, 1), self.request_table.item(x, 2), self.request_table.item(x, 6)
             extract_file("Requests", path_wav, request_id, "midi_audio_file", "file_type")
-            add_song(path_wav, song_name, artist_name, requester)
+            add_song(path_wav, song_name, artist_name,0.05, requester)
             os.remove(path_wav)
             self.delete_request(x, _)
             write_to_log("Song successfully added!")
@@ -358,12 +366,15 @@ class CRequestsGUI(QMainWindow):
                 # Analyze each stem and save as a whole midi file
                 analyzer = AudioAnalyzer()
                 for filename in os.listdir(sep_dir):
-                    analyzer.change_base_file(os.path.join(os.getcwd(), sep_dir, filename))
-                    analyzer.analyze_smart(filename, 0.05) # Analyse with best suiting tools for each stem
+                    if filename != "drums.wav":
+                        filepath = os.path.join(os.getcwd(), sep_dir, filename)
+                        print("Processing:", filepath)
+                        analyzer.change_base_file(filepath)
+                        analyzer.analyze_full(0.05, True, filename.split(".")[0])
                 path_mid = analyzer.save_midi(f"Request_file_{request_id}_{int(time.time())}.mid")
                 # Save the midi file to the database
                 song_name, artist_name, requester = self.request_table.item(x, 1), self.request_table.item(x, 2), self.request_table.item(x, 6)
-                add_song(path_mid, song_name, artist_name, requester)
+                add_song(path_mid, song_name, artist_name, 0.05, requester)
                 os.remove(path_mid)
                 self.delete_request(x, _)
                 write_to_log("Song successfully added!")
@@ -517,8 +528,6 @@ if __name__ == "__main__":
     app = QApplication([])
     server = CHostGUI()
     app.exec_()
-
-
 
 
 

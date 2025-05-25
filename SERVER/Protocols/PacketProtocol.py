@@ -7,7 +7,7 @@ import uuid
 # Local
 from SERVER.config_utils.config import FORMAT, SESSION_TOKEN_DELIMITER, DELIMITER
 from SERVER.config_utils.utils import write_to_log
-from .SecurityProtocol import decrypt_rsa, decrypt_fernet
+from SERVER.Protocols.SecurityProtocol import decrypt_rsa, decrypt_fernet
 
 class Agent(IntFlag):
     Server = 0b0  # 0 (binary 0)
